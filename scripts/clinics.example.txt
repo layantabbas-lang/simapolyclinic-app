@@ -1,0 +1,5 @@
+# One connection string per line. Copy to clinics.txt and fill in.
+# clinics.txt is gitignored - it contains database passwords.
+#
+# postgresql://postgres:PASSWORD@db.abcdefgh.supabase.co:5432/postgres
+# postgresql://postgres:PASSWORD@db.ijklmnop.supabase.co:5432/postgres

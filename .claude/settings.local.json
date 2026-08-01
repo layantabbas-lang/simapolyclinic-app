@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"C:/Maleks System/Sima\" && \\\\ *)",
+      "Bash(mkdir -p reference/src/components)",
+      "Bash(cp \"C:/Maleks System/Sima/src/index.css\" reference/src/index.css)",
+      "Bash(cp \"C:/Maleks System/Sima/src/App.tsx\" reference/src/App.tsx)",
+      "Bash(cp \"C:/Maleks System/Sima/src/supabaseClient.ts\" reference/src/supabaseClient.ts)",
+      "Bash(cp \"C:/Maleks System/Sima/src/types.ts\" reference/src/types.ts)",
+      "Bash(xargs -I{} sh -c 'echo \"{}: $\\(wc -l < \"{}\"\\) lines\"')",
+      "Bash(echo \"exit code: $?\")",
+      "Bash(cd \"C:/Maleks System/medical-document-analyzer\" && \\\\ *)",
+      "Bash(grep -n \"^import\\\\|from \\\\\"\\\\./\\\\|from '\\\\.\\\\./\" src/components/PatientsDirectory.tsx)",
+      "Bash(sed -n '/interface TemplateManagerProps/,/^}/p' TemplateManager.tsx)",
+      "Bash(sed -n '/interface TestManagerProps/,/^}/p' TestManager.tsx)",
+      "Bash(sed -n '/interface LocationsManagerProps/,/^}/p' LocationsManager.tsx)",
+      "Bash(npx tsc *)",
+      "Bash(sort -u -t: -k3)"
+    ]
+  }
+}

@@ -1,0 +1,200 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+/* ============================================================
+   SIMA — Soft Slate Blue theme
+   Eye-comfort palette: no pure white surfaces, no pure black
+   text, one desaturated blue primary across the whole app.
+   All Tailwind color classes below are redefined centrally,
+   so existing bg-slate-*, text-*, border-* classes pick up
+   the new palette automatically.
+   ============================================================ */
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* white → soft paper white (reduces glare on long shifts) */
+  --color-white: #fcfdfe;
+
+  /* neutrals — blue-tinted grays */
+  --color-slate-50: #f4f6f9;
+  --color-slate-100: #edf1f5;
+  --color-slate-200: #dee4eb;
+  --color-slate-300: #c9d2dc;
+  --color-slate-400: #8a96a5;
+  --color-slate-500: #71808f;
+  --color-slate-600: #5d6b7c;
+  --color-slate-700: #3c4b5c;
+  --color-slate-800: #2b3949;
+  --color-slate-900: #1f2e3e;
+  --color-slate-950: #16202b;
+
+  --color-gray-50: #f4f6f9;
+  --color-gray-100: #edf1f5;
+  --color-gray-200: #dee4eb;
+  --color-gray-300: #c9d2dc;
+  --color-gray-400: #8a96a5;
+  --color-gray-500: #71808f;
+  --color-gray-600: #5d6b7c;
+  --color-gray-700: #3c4b5c;
+  --color-gray-800: #2b3949;
+  --color-gray-900: #1f2e3e;
+  --color-gray-950: #16202b;
+
+  /* primary — slate blue (blue, indigo, teal, violet, purple all unify here) */
+  --color-blue-50: #edf3f8;
+  --color-blue-100: #dee9f3;
+  --color-blue-200: #c2d5e7;
+  --color-blue-300: #9dbbd6;
+  --color-blue-400: #6e9cc9;
+  --color-blue-500: #4a7ba6;
+  --color-blue-600: #33608d;
+  --color-blue-700: #2a5178;
+  --color-blue-800: #224264;
+  --color-blue-900: #1b344e;
+  --color-blue-950: #12233a;
+
+  --color-indigo-50: #edf3f8;
+  --color-indigo-100: #dee9f3;
+  --color-indigo-200: #c2d5e7;
+  --color-indigo-300: #9dbbd6;
+  --color-indigo-400: #6e9cc9;
+  --color-indigo-500: #4a7ba6;
+  --color-indigo-600: #33608d;
+  --color-indigo-700: #2a5178;
+  --color-indigo-800: #224264;
+  --color-indigo-900: #1b344e;
+  --color-indigo-950: #12233a;
+
+  --color-teal-50: #edf3f8;
+  --color-teal-100: #dee9f3;
+  --color-teal-200: #c2d5e7;
+  --color-teal-300: #9dbbd6;
+  --color-teal-400: #6e9cc9;
+  --color-teal-500: #4a7ba6;
+  --color-teal-600: #33608d;
+  --color-teal-700: #2a5178;
+  --color-teal-800: #224264;
+  --color-teal-900: #1b344e;
+
+  --color-violet-500: #4a7ba6;
+  --color-violet-600: #33608d;
+  --color-purple-500: #4a7ba6;
+  --color-purple-600: #33608d;
+
+  /* success — desaturated green */
+  --color-emerald-50: #e7f2ec;
+  --color-emerald-100: #d5e8de;
+  --color-emerald-200: #b5d6c5;
+  --color-emerald-300: #8fc0a8;
+  --color-emerald-400: #5fa583;
+  --color-emerald-500: #438a6a;
+  --color-emerald-600: #35795c;
+  --color-emerald-700: #2c6349;
+  --color-emerald-800: #24503c;
+  --color-emerald-900: #1c3f2f;
+
+  --color-green-50: #e7f2ec;
+  --color-green-100: #d5e8de;
+  --color-green-200: #b5d6c5;
+  --color-green-300: #8fc0a8;
+  --color-green-400: #5fa583;
+  --color-green-500: #438a6a;
+  --color-green-600: #35795c;
+  --color-green-700: #2c6349;
+  --color-green-800: #24503c;
+  --color-green-900: #1c3f2f;
+
+  /* warning — muted amber */
+  --color-amber-50: #faf3e3;
+  --color-amber-100: #f5e7c8;
+  --color-amber-200: #ead096;
+  --color-amber-300: #d9b86a;
+  --color-amber-400: #cfa34d;
+  --color-amber-500: #a8842d;
+  --color-amber-600: #8f6d1e;
+  --color-amber-700: #75581a;
+  --color-amber-800: #5c4514;
+  --color-amber-900: #47350f;
+
+  --color-yellow-50: #faf3e3;
+  --color-yellow-100: #f5e7c8;
+  --color-yellow-200: #ead096;
+  --color-yellow-400: #cfa34d;
+  --color-yellow-500: #a8842d;
+  --color-yellow-600: #8f6d1e;
+  --color-yellow-800: #5c4514;
+
+  /* danger — desaturated red */
+  --color-red-50: #f9ecec;
+  --color-red-100: #f3dbdb;
+  --color-red-200: #e7bcbc;
+  --color-red-300: #db9d9b;
+  --color-red-400: #db7a78;
+  --color-red-500: #c05654;
+  --color-red-600: #b3403e;
+  --color-red-700: #96322f;
+  --color-red-800: #7a2826;
+  --color-red-900: #601f1e;
+
+  --color-rose-500: #c05654;
+  --color-rose-600: #b3403e;
+}
+
+:root {
+  --theme-accent: #33608d;
+  --theme-accent-bg: #dee9f3;
+  --theme-accent-dark: #2a5178;
+}
+
+/* Dynamic Theme Helper Classes */
+.theme-bg-accent {
+  background-color: var(--theme-accent) !important;
+}
+.theme-text-accent {
+  color: var(--theme-accent) !important;
+}
+.theme-border-accent {
+  border-color: var(--theme-accent) !important;
+}
+.theme-bg-accent-dark {
+  background-color: var(--theme-accent-dark) !important;
+}
+.theme-text-accent-dark {
+  color: var(--theme-accent-dark) !important;
+}
+.theme-bg-accent-bg {
+  background-color: var(--theme-accent-bg) !important;
+}
+.theme-border-accent-bg {
+  border-color: var(--theme-accent-bg) !important;
+}
+.theme-bg-hover:hover {
+  background-color: var(--theme-accent-bg) !important;
+  color: var(--theme-accent-dark) !important;
+}
+
+/* Custom styles for high-contrast presentation */
+.glass-panel {
+  background: rgba(252, 253, 254, 0.72);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(222, 228, 235, 0.8);
+}
+.dark-glass-panel {
+  background: rgba(31, 46, 62, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(58, 76, 96, 0.5);
+}
+
+/* Eye-comfort base */
+body {
+  background: #f4f6f9;
+  color: #26313e;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: #dee9f3;
+  color: #26313e;
+}

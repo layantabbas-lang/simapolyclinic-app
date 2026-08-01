@@ -1,0 +1,11 @@
+# Secrets - never commit
+.env
+.env.*
+!.env.example
+scripts/clinics.txt
+
+node_modules/
+dist/
+build/
+.DS_Store
+Thumbs.db
