@@ -12,6 +12,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 
+// Vercel's default serverless function timeout is 10s, which document
+// analysis (network + Claude's response time) can easily exceed regardless
+// of file size -- a killed function returns a truncated/empty response,
+// which is exactly the "Unexpected end of JSON input" error on the client.
+// 60s is the max duration allowed on Vercel's Hobby plan; raise it if the
+// project is ever on Pro (up to 300s) and this still isn't enough.
+export const maxDuration = 60;
+
 let supabaseAdmin: any = null;
 function getSupabaseAdmin(): any {
   if (!supabaseAdmin) {

@@ -18,7 +18,8 @@
       "Bash(sort -u -t: -k3)",
       "Bash(timeout 20 git push origin main)",
       "Bash(echo \"EXIT: $?\")",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
