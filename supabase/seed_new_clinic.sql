@@ -11,10 +11,10 @@
 begin;
 
 update public.clinic_settings set
-  clinic_name             = 'Polyclinique Example',
-  clinic_name_ar          = 'عيادة المثال',
-  phone                   = '+961 1 000 000',
-  address                 = 'Baabda, Mount Lebanon',
+  clinic_name             = 'Layan''s Clinic',
+  clinic_name_ar          = null,
+  phone                   = '+961 3 332 486',
+  address                 = 'Beirut, Lebanon',
   default_slot_minutes    = 20,
   vat_pct                 = 11,
   doctors_see_all_records = false
@@ -23,7 +23,7 @@ where id;
 -- The first admin. Leave user_id null: migration 0008 links it
 -- automatically when this person signs up with the same email.
 insert into public.staff (full_name, email, roles, phone)
-values ('Clinic Owner', 'owner@example.com', array['owner','admin']::public.staff_role[], '+961 3 000 000')
+values ('Layan Abbas Kaddourah', 'Layan.t.abbas@gmail.com', array['owner','admin']::public.staff_role[], '+961 3 332 486')
 on conflict do nothing;
 
 -- Starter price list.

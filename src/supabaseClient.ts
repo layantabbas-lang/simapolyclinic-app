@@ -77,6 +77,41 @@ const MOCK_APPOINTMENTS_TABLE = [
   },
 ];
 
+// Shaped to match supabase/migrations/0006_billing.sql — same starter
+// price list seed_new_clinic.sql inserts for a real clinic.
+const MOCK_SERVICES_TABLE = [
+  { id: "sv-1", code: "CONS-GEN", name: "General consultation", category: "Consultation", price_usd: 30, is_active: true },
+  { id: "sv-2", code: "CONS-SPEC", name: "Specialist consultation", category: "Consultation", price_usd: 50, is_active: true },
+  { id: "sv-3", code: "CONS-FU", name: "Follow-up visit", category: "Consultation", price_usd: 20, is_active: true },
+  { id: "sv-4", code: "PROC-INJ", name: "Injection", category: "Procedure", price_usd: 10, is_active: true },
+  { id: "sv-5", code: "PROC-ECG", name: "ECG", category: "Diagnostic", price_usd: 25, is_active: true },
+  { id: "sv-6", code: "PROC-US", name: "Ultrasound", category: "Diagnostic", price_usd: 45, is_active: true },
+];
+
+const MOCK_INVOICES_TABLE: any[] = [
+  {
+    id: "inv-1", invoice_no: "2026-000001", patient_id: "100234", status: "paid", payer_type: "cash",
+    subtotal_usd: 30, discount_usd: 0, vat_pct: 11, vat_usd: 3.3, total_usd: 33.3, paid_usd: 33.3,
+    issued_at: todayAt(9, 25), created_at: todayAt(9, 25), notes: null,
+    patients: { id: "100234", first_name: "Layan", last_name: "Abbas", mrn: "P100234" },
+  },
+  {
+    id: "inv-2", invoice_no: "2026-000002", patient_id: "100237", status: "issued", payer_type: "cash",
+    subtotal_usd: 10, discount_usd: 0, vat_pct: 11, vat_usd: 1.1, total_usd: 11.1, paid_usd: 0,
+    issued_at: todayAt(10, 25), created_at: todayAt(10, 25), notes: null,
+    patients: { id: "100237", first_name: "Fadi", last_name: "Nassar", mrn: "P100237" },
+  },
+];
+
+const MOCK_INVOICE_ITEMS_TABLE: any[] = [
+  { id: "ii-1", invoice_id: "inv-1", service_id: "sv-1", description: "General consultation", quantity: 1, unit_price_usd: 30, discount_usd: 0, line_total_usd: 30 },
+  { id: "ii-2", invoice_id: "inv-2", service_id: "sv-4", description: "Injection", quantity: 1, unit_price_usd: 10, discount_usd: 0, line_total_usd: 10 },
+];
+
+const MOCK_PAYMENTS_TABLE: any[] = [
+  { id: "pm-1", invoice_id: "inv-1", paid_at: todayAt(9, 30), method: "cash", amount_original: 33.3, currency: "USD", amount_usd: 33.3, reference: null },
+];
+
 // Real supabase-js query builders are chainable to arbitrary depth
 // (.select().order().eq().limit(), .insert().select().single(), etc.) and
 // only resolve once awaited. A flat mock that only implements one or two
@@ -114,6 +149,10 @@ const MOCK_TABLES: Record<string, any[]> = {
   staff: MOCK_STAFF_TABLE,
   rooms: MOCK_ROOMS_TABLE,
   appointments: MOCK_APPOINTMENTS_TABLE,
+  services: MOCK_SERVICES_TABLE,
+  invoices: MOCK_INVOICES_TABLE,
+  invoice_items: MOCK_INVOICE_ITEMS_TABLE,
+  payments: MOCK_PAYMENTS_TABLE,
 };
 
 // Bakes the same {patients, staff, rooms} embed a real Supabase
@@ -131,6 +170,34 @@ function embedAppointmentJoins(row: any) {
   return row;
 }
 
+function embedInvoiceJoins(row: any) {
+  const patientRow = MOCK_PATIENTS_TABLE.find((p) => String(p.mrn) === String(row.patient_id));
+  if (patientRow) {
+    row.patients = { id: String(patientRow.mrn), first_name: patientRow.first_name, last_name: patientRow.surname, mrn: `P${patientRow.mrn}` };
+  }
+  return row;
+}
+
+// Mirrors app.refresh_invoice_totals() (0006_billing.sql): every time a
+// payment is inserted, recompute the invoice's paid_usd and status from
+// the sum of its payments, so mock mode behaves like the real trigger.
+function recomputeInvoiceFromPayments(invoiceId: string) {
+  const invoice = MOCK_INVOICES_TABLE.find((i) => i.id === invoiceId);
+  if (!invoice) return;
+  const paid = MOCK_PAYMENTS_TABLE
+    .filter((p) => p.invoice_id === invoiceId)
+    .reduce((sum, p) => sum + Number(p.amount_usd), 0);
+  invoice.paid_usd = Math.round(paid * 100) / 100;
+  if (invoice.status !== "void") {
+    invoice.status =
+      paid >= invoice.total_usd && invoice.total_usd > 0 ? "paid" :
+      paid > 0 ? "partially_paid" :
+      invoice.status === "draft" ? "draft" : "issued";
+  }
+}
+
+let mockInvoiceSeq = MOCK_INVOICES_TABLE.length + 1;
+
 const createMockChain = (table?: string) => {
   const rows = (table && MOCK_TABLES[table]) || [];
   return {
@@ -146,6 +213,25 @@ const createMockChain = (table?: string) => {
           MOCK_APPOINTMENTS_TABLE.push(row);
         });
       }
+      if (table === "invoices") {
+        mockData.forEach((row: any) => {
+          if (!row.invoice_no) row.invoice_no = `2026-${String(mockInvoiceSeq++).padStart(6, "0")}`;
+          embedInvoiceJoins(row);
+          MOCK_INVOICES_TABLE.push(row);
+        });
+      }
+      if (table === "invoice_items") {
+        mockData.forEach((row: any) => {
+          row.line_total_usd = Math.round(((row.quantity ?? 1) * (row.unit_price_usd ?? 0) - (row.discount_usd ?? 0)) * 100) / 100;
+          MOCK_INVOICE_ITEMS_TABLE.push(row);
+        });
+      }
+      if (table === "payments") {
+        mockData.forEach((row: any) => {
+          MOCK_PAYMENTS_TABLE.push(row);
+          recomputeInvoiceFromPayments(row.invoice_id);
+        });
+      }
       return makeChainable({ data: mockData, error: null });
     },
     // Only .eq(column, value) actually mutates the seed data — enough for
@@ -159,6 +245,7 @@ const createMockChain = (table?: string) => {
           if (idx !== -1) {
             Object.assign(rows[idx], payload);
             if (table === "appointments") embedAppointmentJoins(rows[idx]);
+            if (table === "invoices") embedInvoiceJoins(rows[idx]);
           }
           return makeChainable({ data: idx !== -1 ? [rows[idx]] : [], error: null });
         },

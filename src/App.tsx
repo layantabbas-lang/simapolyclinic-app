@@ -1,23 +1,74 @@
-import { useState } from "react";
-import { CalendarDays, ChevronDown, FileText, FlaskConical, LogOut, MapPin, Users, Wrench } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CalendarDays, ChevronDown, FileText, FlaskConical, LogOut, MapPin, Receipt, UserCog, Users, Wrench } from "lucide-react";
 import SignIn from "./components/SignIn";
+import ResetPassword from "./components/ResetPassword";
 import PatientsDirectory from "./components/PatientsDirectory";
 import Appointments from "./components/Appointments";
+import Billing from "./components/Billing";
 import { VisitNotesProvider } from "./components/VisitNotesManager";
 import TemplateManager from "./components/TemplateManager";
 import TestManager from "./components/TestManager";
 import LocationsManager from "./components/LocationsManager";
+import StaffManager from "./components/StaffManager";
+import { restoreSession } from "./authSession";
+import { isConfigured, supabase } from "./supabaseClient";
 import { UserSession } from "./types";
 
-type ViewMode = "patients" | "appointments";
+type ViewMode = "patients" | "appointments" | "billing";
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("patients");
   const [isMyToolsOpen, setIsMyToolsOpen] = useState(false);
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
   const [isTestManagerOpen, setIsTestManagerOpen] = useState(false);
   const [isLocationsManagerOpen, setIsLocationsManagerOpen] = useState(false);
+  const [isStaffManagerOpen, setIsStaffManagerOpen] = useState(false);
+
+  useEffect(() => {
+    restoreSession()
+      .then(setCurrentUser)
+      .finally(() => setIsCheckingSession(false));
+  }, []);
+
+  // Clicking the password-reset link in the email lands back here with a
+  // recovery token; Supabase's client picks it up automatically and fires
+  // this event instead of a normal sign-in.
+  useEffect(() => {
+    if (!isConfigured) return;
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") setIsPasswordRecovery(true);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    if (isConfigured) {
+      await supabase.auth.signOut();
+    }
+    setCurrentUser(null);
+  };
+
+  if (isCheckingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <img src="/sima-logo-dark.png" alt="SIMA" className="h-6 w-auto opacity-60 animate-pulse" />
+      </div>
+    );
+  }
+
+  if (isPasswordRecovery) {
+    return (
+      <ResetPassword
+        onDone={() => {
+          restoreSession().then(setCurrentUser);
+          setIsPasswordRecovery(false);
+        }}
+      />
+    );
+  }
 
   if (!currentUser) {
     return <SignIn onLoginSuccess={setCurrentUser} />;
@@ -41,7 +92,7 @@ export default function App() {
               {" "}— {currentUser.name}
             </span>
             <button
-              onClick={() => setCurrentUser(null)}
+              onClick={handleLogout}
               className="flex items-center gap-1 text-[11px] font-semibold"
               style={{ color: "#db7a78" }}
             >
@@ -76,6 +127,17 @@ export default function App() {
           >
             <CalendarDays size={14} style={{ color: "var(--theme-accent)" }} />
             Appointments
+          </button>
+          <button
+            onClick={() => setViewMode("billing")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
+            style={{
+              background: viewMode === "billing" ? "rgba(255,255,255,0.15)" : "transparent",
+              color: "#fcfdfe",
+            }}
+          >
+            <Receipt size={14} style={{ color: "var(--theme-accent)" }} />
+            Billing
           </button>
           <div className="relative">
             <button
@@ -117,6 +179,19 @@ export default function App() {
                   >
                     <MapPin size={13} style={{ color: "var(--theme-accent)" }} /> My Locations
                   </button>
+                  {currentUser.role === "admin" && (
+                    <>
+                      <div className="px-2 pt-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-t border-slate-100 mt-0.5">
+                        Admin
+                      </div>
+                      <button
+                        onClick={() => { setIsStaffManagerOpen(true); setIsMyToolsOpen(false); }}
+                        className="flex items-center gap-2 px-2.5 py-2 rounded-md text-xs font-semibold text-slate-700 hover:bg-slate-100 text-left"
+                      >
+                        <UserCog size={13} style={{ color: "var(--theme-accent)" }} /> Staff
+                      </button>
+                    </>
+                  )}
                 </div>
               </>
             )}
@@ -127,6 +202,7 @@ export default function App() {
         <main className="flex-1">
           {viewMode === "patients" && <PatientsDirectory currentUser={currentUser} />}
           {viewMode === "appointments" && <Appointments currentUser={currentUser} />}
+          {viewMode === "billing" && <Billing currentUser={currentUser} />}
         </main>
       </div>
 
@@ -143,6 +219,11 @@ export default function App() {
       <LocationsManager
         isOpen={isLocationsManagerOpen}
         onClose={() => setIsLocationsManagerOpen(false)}
+        currentUser={currentUser}
+      />
+      <StaffManager
+        isOpen={isStaffManagerOpen}
+        onClose={() => setIsStaffManagerOpen(false)}
         currentUser={currentUser}
       />
     </VisitNotesProvider>
