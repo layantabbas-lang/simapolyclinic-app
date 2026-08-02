@@ -1279,7 +1279,7 @@ export default function PatientsDirectory({
     let interpolated = content;
     if (selectedPatient) {
       const ageStr = selectedPatient.birth_date ? `${calculateAge(selectedPatient.birth_date)}` : "N/A";
-      const mrnStr = selectedPatient.id ? formatMRNDisplay(selectedPatient.id) : "N/A";
+      const mrnStr = selectedPatient.id ? formatMRNDisplay(selectedPatient.mrn) : "N/A";
       interpolated = interpolated
         .replace(/@NAME@/g, selectedPatient.name)
         .replace(/@AGE@/g, ageStr)
@@ -1910,9 +1910,8 @@ export default function PatientsDirectory({
       finalContent = `${activeNoteContent}\n\n[SIGNED ELECTRONICALLY]\nBy: ${currentUser?.name || "Unassigned Provider"}\nTimestamp: ${new Date().toLocaleString("en-GB")}\nVerified in SIMA Registry.`;
     }
 
-    const parsedMrn = parseInt(String(selectedPatient.mrn ?? selectedPatient.id), 10);
     const payload: any = {
-      patient_mrn: isNaN(parsedMrn) ? null : parsedMrn,
+      patient_id: selectedPatient.id || null,
       doctor_id: currentUser?.id || null,
       content: finalContent,
       appointment_id: activeNoteAppointmentId,
@@ -2294,12 +2293,13 @@ export default function PatientsDirectory({
       try {
         const selectedMrn = Number(selectedPatient.mrn ?? selectedPatient.id);
 
-        // 1. Fetch appointments (linked by patient_mrn foreign key)
+        // 1. Fetch appointments (linked by patient_id — this app's own
+        // schema, unlike SIMA's numeric patient_mrn foreign key)
         const { data: appts, error: apptErr } = await supabase
           .from("appointments")
           .select("*")
-          .eq("patient_mrn", selectedMrn)
-          .order("schedule_time", { ascending: false });
+          .eq("patient_id", selectedPatient.id)
+          .order("starts_at", { ascending: false });
 
         if (!apptErr && appts) {
           setPatientAppointments(appts);
@@ -2333,11 +2333,11 @@ export default function PatientsDirectory({
           setPatientRecords([]);
         }
 
-        // 3. Fetch clinical visit notes (linked by patient_mrn)
+        // 3. Fetch clinical visit notes (linked by patient_id)
         const { data: notes, error: noteErr } = await supabase
           .from("visit_notes")
           .select("*")
-          .eq("patient_mrn", selectedMrn)
+          .eq("patient_id", selectedPatient.id)
           .order("created_at", { ascending: false });
 
         if (!noteErr && notes) {
@@ -2747,7 +2747,7 @@ export default function PatientsDirectory({
         if (newPatientInitialNote.trim() || newPatientBp.trim() || newPatientHr.trim() || newPatientInitialDx.trim() || newPatientInitialFollowUp.trim()) {
           const contentValue = newPatientInitialNote.trim() || "Initial clinical evaluation note.";
           const initialNotePayload: any = {
-            patient_mrn: created.mrn,
+            patient_id: created.id,
             doctor_id: currentUser?.id || null,
             content: contentValue,
             blood_pressure: newPatientBp.trim() || null,
@@ -3285,7 +3285,7 @@ export default function PatientsDirectory({
                   </button>
                   {selectedPatient && (
                   <button
-                    onClick={() => openNoteWindow(selectedPatient.name, null, currentUser?.name || "Unassigned Provider")}
+                    onClick={() => openNoteWindow(selectedPatient.name, null, currentUser?.name || "Unassigned Provider", selectedPatient.id)}
                     className="bg-[#8f6d1e] hover:bg-[#75581a] text-white font-bold px-2.5 py-1 rounded text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
                   >
                     <Plus size={11} /> Launch Dynamic HUD
@@ -3313,7 +3313,7 @@ export default function PatientsDirectory({
                       {selectedPatient.gender}, {calculateAge(selectedPatient.birth_date)} y.o. &bull; {formatDateDDMMYYYY(selectedPatient.birth_date)}
                     </p>
                     <span className="text-[9px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded mt-1 font-mono font-bold">
-                      MRN: {formatMRNDisplay(selectedPatient.id)}
+                      MRN: {formatMRNDisplay(selectedPatient.mrn)}
                     </span>
                     <div className="flex items-center gap-1.5 mt-2.5 w-full">
                       <button type="button" onClick={openEditPatient} className="flex-1 bg-white hover:bg-slate-50 border border-[#c2d5e7] text-[#2a5178] text-[9px] font-bold px-2 py-1.5 rounded flex items-center justify-center gap-1 cursor-pointer transition-all">
@@ -3644,7 +3644,7 @@ export default function PatientsDirectory({
 
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider bg-slate-200 px-2 py-0.5 rounded">
-                    MRN: {formatMRNDisplay(selectedPatient.id)}
+                    MRN: {formatMRNDisplay(selectedPatient.mrn)}
                   </span>
                 </div>
               </div>
@@ -4111,9 +4111,8 @@ INTERPRETATION: ${interp}
 Assessing Provider: ${currentUser?.name || "Unassigned Provider"}
 Registry Status: VERIFIED`;
 
-                                      const testMrn = parseInt(String(selectedPatient.mrn ?? selectedPatient.id), 10);
                                       const notePayload = {
-                                        patient_mrn: isNaN(testMrn) ? null : testMrn,
+                                        patient_id: selectedPatient.id || null,
                                         doctor_id: currentUser?.id || null,
                                         content: reportText,
                                         blood_pressure: activeNoteBp || null,
@@ -7145,7 +7144,7 @@ Question Responses: [${gad7Answers.join(", ")}]`;
             <div className="px-5 py-4 border-b bg-slate-50 flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <Edit3 className="h-4 w-4 text-indigo-600" />
-                <span className="font-bold text-xs text-slate-800 uppercase tracking-wide">Edit Patient Profile — MRN {formatMRNDisplay(selectedPatient.id)}</span>
+                <span className="font-bold text-xs text-slate-800 uppercase tracking-wide">Edit Patient Profile — MRN {formatMRNDisplay(selectedPatient.mrn)}</span>
               </div>
               <button onClick={() => setIsEditPatientModal(false)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
             </div>
@@ -7253,7 +7252,7 @@ Question Responses: [${gad7Answers.join(", ")}]`;
               <button onClick={() => setIsScheduleModal(false)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
             </div>
             <form onSubmit={handleSaveSchedule} className="p-5 flex flex-col gap-3 text-xs">
-              <p className="text-[11px] text-slate-500 -mt-1">Booking for <strong className="text-slate-700">{selectedPatient.name}</strong> (MRN {formatMRNDisplay(selectedPatient.id)})</p>
+              <p className="text-[11px] text-slate-500 -mt-1">Booking for <strong className="text-slate-700">{selectedPatient.name}</strong> (MRN {formatMRNDisplay(selectedPatient.mrn)})</p>
               {schedError && <div className="bg-red-50 border border-red-100 text-red-600 text-[10px] font-semibold px-2.5 py-1.5 rounded">{schedError}</div>}
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -8252,7 +8251,7 @@ Question Responses: [${gad7Answers.join(", ")}]`;
                 <div className="flex justify-between items-start border-b-2 border-slate-900 pb-2 flex-wrap gap-2">
                   <div>
                     <h2 className="text-xl font-black uppercase tracking-tight text-slate-900">After Visit Summary (AVS)</h2>
-                    <span className="text-[10px] text-slate-500 font-mono font-bold uppercase tracking-wider block mt-1">EMR Document Code: EMR-{formatMRNDisplay(selectedPatient.id)}</span>
+                    <span className="text-[10px] text-slate-500 font-mono font-bold uppercase tracking-wider block mt-1">EMR Document Code: EMR-{formatMRNDisplay(selectedPatient.mrn)}</span>
                   </div>
                   <div className="text-right text-[10px] font-semibold text-slate-600">
                     <p>Date: {new Date().toLocaleDateString("en-GB")}</p>

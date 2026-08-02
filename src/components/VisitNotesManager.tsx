@@ -283,7 +283,7 @@ export function VisitNotesProvider({ children }: { children: React.ReactNode }) 
         const { data: mrnData, error: mrnErr } = await supabase
           .from("visit_notes")
           .select("*")
-          .eq("patient_mrn", patientId)
+          .eq("patient_id", patientId)
           .order("created_at", { ascending: false })
           .limit(1);
         data = mrnData;
@@ -360,10 +360,9 @@ export function VisitNotesProvider({ children }: { children: React.ReactNode }) 
       console.warn("Could not get auth user for created_by field:", e);
     }
 
-    const parsedMrn = win.patientMrn ? parseInt(String(win.patientMrn), 10) : null;
     const notePayload: Partial<VisitNote> = {
       appointment_id: win.appointmentId,
-      patient_mrn: isNaN(Number(parsedMrn)) ? null : (parsedMrn ?? null),
+      patient_id: win.patientId || null,
       content: win.content,
       blood_pressure: win.bloodPressure || null,
       heart_rate: win.heartRate || null,

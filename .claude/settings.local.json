@@ -15,7 +15,9 @@
       "Bash(sed -n '/interface TestManagerProps/,/^}/p' TestManager.tsx)",
       "Bash(sed -n '/interface LocationsManagerProps/,/^}/p' LocationsManager.tsx)",
       "Bash(npx tsc *)",
-      "Bash(sort -u -t: -k3)"
+      "Bash(sort -u -t: -k3)",
+      "Bash(timeout 20 git push origin main)",
+      "Bash(echo \"EXIT: $?\")"
     ]
   }
 }
