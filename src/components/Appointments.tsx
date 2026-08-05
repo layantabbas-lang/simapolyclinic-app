@@ -141,15 +141,18 @@ export default function Appointments({ currentUser }: { currentUser?: UserSessio
     <div className="p-4 flex flex-col gap-3 max-w-5xl mx-auto w-full">
       {/* Command ribbon — matches the Patients workspace ribbon styling */}
       <div className="bg-[#2a5178] text-white px-4 py-2.5 rounded-lg flex items-center justify-between flex-wrap gap-2 text-xs">
-        <div className="flex items-center gap-2">
+        {/* Wraps rather than forcing the page wider than a phone: this row
+            is ~418px laid out in one line, which dragged the whole
+            appointment book sideways on a 375px screen. */}
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
           <span className="font-extrabold text-[#edf3f8] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
             <Calendar size={13} className="text-[#c2d5e7]" /> Appointment Book
           </span>
-          <div className="flex items-center gap-1 ml-2">
+          <div className="flex items-center gap-1 sm:ml-2 min-w-0">
             <button onClick={() => shiftDay(-1)} className="p-1 bg-white/10 hover:bg-white/20 border border-white/20 rounded cursor-pointer">
               <ChevronLeft size={13} />
             </button>
-            <span className="font-bold text-[11px] px-1 min-w-[190px] text-center">{formatDayHeading(selectedDate)}</span>
+            <span className="font-bold text-[11px] px-1 min-w-0 sm:min-w-[190px] text-center truncate">{formatDayHeading(selectedDate)}</span>
             <button onClick={() => shiftDay(1)} className="p-1 bg-white/10 hover:bg-white/20 border border-white/20 rounded cursor-pointer">
               <ChevronRight size={13} />
             </button>
