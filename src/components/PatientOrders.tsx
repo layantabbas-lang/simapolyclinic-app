@@ -60,18 +60,12 @@ export function parseOrderText(raw: string): {
   const text = raw.trim();
   const lower = text.toLowerCase();
 
-  let order_type: OrderType = "other";
-  if (/\b(cbc|bmp|cmp|hba1c|lipid|tsh|urinalysis|culture|blood\s+work|panel|level|serum|glucose|creatinine)\b/.test(lower)) {
-    order_type = "lab";
-  } else if (/\b(x-?ray|xray|ct|mri|ultrasound|u\/s|echo|doppler|mammogram|scan|radiograph)\b/.test(lower)) {
-    order_type = "imaging";
-  } else if (/\b(refer|referral|consult)\b/.test(lower)) {
-    order_type = "referral";
-  } else if (/\b(biopsy|excision|suture|injection|aspiration|dressing|ecg|ekg|spirometry)\b/.test(lower)) {
-    order_type = "procedure";
-  } else if (/\b(mg|mcg|ml|tab|tablet|cap|capsule|syrup|ointment|cream|drops|units?)\b/.test(lower)) {
-    order_type = "medication";
-  }
+  // Dose first: it's the strongest medication signal, and the type check
+  // below reuses it. Note there is no \b before the unit -- in "500mg"
+  // there's no word boundary between the digit and the "m", so a leading
+  // \b would never match a dose written without a space.
+  const doseMatch = text.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g|ml|tabs?|caps?|units?|puffs?|drops?)\b/i);
+  const dose = doseMatch ? `${doseMatch[1]}${doseMatch[2].toLowerCase()}` : null;
 
   let route: string | null = null;
   for (const [alias, full] of Object.entries(ROUTE_ALIASES)) {
@@ -84,8 +78,22 @@ export function parseOrderText(raw: string): {
     if (m) { frequency = label.replace("$1", m[1] || ""); break; }
   }
 
-  const doseMatch = text.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g|ml|tabs?|caps?|units?|puffs?|drops?)\b/i);
-  const dose = doseMatch ? `${doseMatch[1]}${doseMatch[2].toLowerCase()}` : null;
+  let order_type: OrderType = "other";
+  if (/\b(cbc|bmp|cmp|hba1c|lipid|tsh|urinalysis|culture|blood\s+work|panel|level|serum|glucose|creatinine)\b/.test(lower)) {
+    order_type = "lab";
+  } else if (/\b(x-?ray|xray|ct|mri|ultrasound|u\/s|echo|doppler|mammogram|scan|radiograph)\b/.test(lower)) {
+    order_type = "imaging";
+  } else if (/\b(refer|referral|consult)\b/.test(lower)) {
+    order_type = "referral";
+  } else if (/\b(biopsy|excision|suture|aspiration|dressing|ecg|ekg|spirometry)\b/.test(lower)) {
+    order_type = "procedure";
+  } else if (
+    dose
+    || route
+    || /\b(tablets?|capsules?|syrup|ointment|cream|drops|injection|inhaler|sachet)\b/.test(lower)
+  ) {
+    order_type = "medication";
+  }
 
   // Item name = the text with the parsed bits stripped off the end.
   let item_name: string | null = text
@@ -303,6 +311,17 @@ export default function PatientOrders({ patientId, currentUser, onToast }: Props
               ref={inputRef}
               value={text}
               onChange={e => setText(e.target.value)}
+              // Submit on Enter explicitly rather than leaning on the form's
+              // implicit submission -- this input lives deep inside the
+              // patient workspace, and the hint right above it promises
+              // Enter works, so it shouldn't depend on nothing upstream
+              // swallowing the keypress.
+              onKeyDown={e => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSubmit(e);
+                }
+              }}
               placeholder='e.g. "CBC and HbA1c" or "Amoxicillin 500mg PO TID"'
               className="flex-1 px-3 py-2 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:bg-white focus:ring-1 focus:ring-[var(--theme-accent)]"
             />
