@@ -20,7 +20,8 @@
       "Bash(echo \"EXIT: $?\")",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(timeout 120 git push origin main)"
+      "Bash(timeout 120 git push origin main)",
+      "Bash(python -)"
     ]
   }
 }

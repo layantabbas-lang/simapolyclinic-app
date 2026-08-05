@@ -217,7 +217,7 @@ export default function PublicBooking() {
             <select
               value={doctorId}
               onChange={e => setDoctorId(e.target.value)}
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 bg-white focus:outline-none focus:ring-1 focus:ring-[#2a5178]"
+              className="w-full text-base border border-slate-200 rounded-lg px-3 py-3 bg-white focus:outline-none focus:ring-1 focus:ring-[#2a5178]"
             >
               <option value="">-- select --</option>
               {doctors.map(d => (
@@ -238,7 +238,7 @@ export default function PublicBooking() {
 
             <div className="flex items-center justify-between gap-2 mb-3">
               <button type="button" onClick={() => shiftDate(-1)}
-                className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 cursor-pointer">
+                className="min-w-11 min-h-11 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 cursor-pointer">
                 <ChevronLeft size={15} />
               </button>
               <input
@@ -246,10 +246,10 @@ export default function PublicBooking() {
                 value={date}
                 min={toDateInput(new Date())}
                 onChange={e => e.target.value && setDate(e.target.value)}
-                className="flex-1 text-center text-xs font-bold text-[#2a5178] border border-slate-200 rounded-lg px-2 py-2 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#2a5178]"
+                className="flex-1 text-center text-base font-bold text-[#2a5178] border border-slate-200 rounded-lg px-2 min-h-11 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#2a5178]"
               />
               <button type="button" onClick={() => shiftDate(1)}
-                className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 cursor-pointer">
+                className="min-w-11 min-h-11 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 cursor-pointer">
                 <ChevronRight size={15} />
               </button>
             </div>
@@ -276,7 +276,7 @@ export default function PublicBooking() {
                       key={s.start}
                       type="button"
                       onClick={() => setSelectedSlot(s.start)}
-                      className={`py-2 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                      className={`min-h-11 rounded-lg text-sm font-bold border transition-all cursor-pointer ${
                         active
                           ? "bg-[#2a5178] text-white border-[#2a5178]"
                           : "bg-white text-slate-700 border-slate-200 hover:border-[#2a5178]"
@@ -300,23 +300,23 @@ export default function PublicBooking() {
             <input
               value={fullName} onChange={e => setFullName(e.target.value)}
               placeholder="Full name" autoComplete="name"
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-[#2a5178]"
+              className="w-full text-base border border-slate-200 rounded-lg px-3 py-3 focus:outline-none focus:ring-1 focus:ring-[#2a5178]"
             />
             <input
               value={phone} onChange={e => setPhone(e.target.value)}
               placeholder="Phone number" type="tel" autoComplete="tel" inputMode="tel"
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-[#2a5178]"
+              className="w-full text-base border border-slate-200 rounded-lg px-3 py-3 focus:outline-none focus:ring-1 focus:ring-[#2a5178]"
             />
             <input
               value={email} onChange={e => setEmail(e.target.value)}
               placeholder="Email (optional)" type="email" autoComplete="email"
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-[#2a5178]"
+              className="w-full text-base border border-slate-200 rounded-lg px-3 py-3 focus:outline-none focus:ring-1 focus:ring-[#2a5178]"
             />
             <textarea
               value={reason} onChange={e => setReason(e.target.value)}
               rows={2} maxLength={500}
               placeholder="Reason for the visit (optional)"
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-[#2a5178] resize-none"
+              className="w-full text-base border border-slate-200 rounded-lg px-3 py-3 focus:outline-none focus:ring-1 focus:ring-[#2a5178] resize-none"
             />
             <p className="text-[10px] text-slate-400">
               Please don't include medical details here — you can discuss those at your visit.
