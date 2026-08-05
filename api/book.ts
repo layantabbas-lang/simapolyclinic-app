@@ -63,7 +63,7 @@ export default async function handler(req: any, res: any) {
     // ── Is booking switched on for this clinic?
     const { data: settings } = await db
       .from("clinic_settings")
-      .select("clinic_name, phone, address, booking_enabled")
+      .select("clinic_name, phone, address, booking_enabled, timezone")
       .limit(1)
       .maybeSingle();
 
@@ -88,7 +88,16 @@ export default async function handler(req: any, res: any) {
           .filter((s: any) => (s.roles || []).includes("doctor"))
           .map((s: any) => ({ id: s.id, name: s.full_name, specialty: s.specialty || null }));
         return res.status(200).json({
-          clinic: settings ? { name: settings.clinic_name, phone: settings.phone, address: settings.address } : null,
+          clinic: settings
+            ? {
+                name: settings.clinic_name,
+                phone: settings.phone,
+                address: settings.address,
+                // So the page shows clinic time, not the visitor's device
+                // time -- a patient abroad must still read "08:00".
+                timezone: settings.timezone || "Asia/Beirut",
+              }
+            : null,
           doctors,
         });
       }

@@ -9,7 +9,7 @@ import { CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Loader2, MapPin,
 
 interface Doctor { id: string; name: string; specialty: string | null; }
 interface Slot { start: string; end: string; }
-interface Clinic { name: string | null; phone: string | null; address: string | null; }
+interface Clinic { name: string | null; phone: string | null; address: string | null; timezone?: string | null; }
 
 const toDateInput = (d: Date) => {
   const y = d.getFullYear();
@@ -17,8 +17,13 @@ const toDateInput = (d: Date) => {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 };
-const formatTime = (iso: string) =>
-  new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+// Always render in the clinic's timezone, never the device's. A patient
+// booking from abroad -- or with a phone set to the wrong zone -- must
+// still read the time they're expected to walk in.
+const formatTime = (iso: string, tz?: string | null) =>
+  new Date(iso).toLocaleTimeString("en-GB", {
+    hour: "2-digit", minute: "2-digit", ...(tz ? { timeZone: tz } : {}),
+  });
 const formatLongDate = (d: Date) =>
   d.toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
 
@@ -176,8 +181,11 @@ export default function PublicBooking() {
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mt-4 text-left">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">You asked for</div>
             <div className="text-xs font-bold text-slate-800">
-              {selectedSlot && new Date(selectedSlot).toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "long" })}
-              {selectedSlot && ` at ${formatTime(selectedSlot)}`}
+              {selectedSlot && new Date(selectedSlot).toLocaleDateString("en-GB", {
+                weekday: "long", day: "2-digit", month: "long",
+                ...(clinic?.timezone ? { timeZone: clinic.timezone } : {}),
+              })}
+              {selectedSlot && ` at ${formatTime(selectedSlot, clinic?.timezone)}`}
             </div>
             {selectedDoctor && <div className="text-[11px] text-slate-500 mt-0.5">with {selectedDoctor.name}</div>}
           </div>
@@ -274,7 +282,7 @@ export default function PublicBooking() {
                           : "bg-white text-slate-700 border-slate-200 hover:border-[#2a5178]"
                       }`}
                     >
-                      {formatTime(s.start)}
+                      {formatTime(s.start, clinic?.timezone)}
                     </button>
                   );
                 })}
