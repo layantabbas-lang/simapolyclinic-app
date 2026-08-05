@@ -3,13 +3,14 @@ import {
   Plus, Edit2, Trash2, Save, X, Search, FileText, Check, AlertCircle, Sparkles, Folder, HelpCircle, Copy, UserCheck, Database
 } from "lucide-react";
 import { supabase } from "../supabaseClient";
+import { UserSession } from "../types";
 import { noteTemplates as staticTemplates, ClinicalTemplate } from "./PatientsDirectory";
 
 interface TemplateManagerProps {
   isOpen: boolean;
   onClose: () => void;
   onTemplatesUpdated?: () => void;
-  currentUser?: { id?: string; username: string; name: string; role: string } | null;
+  currentUser?: UserSession | null;
 }
 
 export default function TemplateManager({ isOpen, onClose, onTemplatesUpdated, currentUser }: TemplateManagerProps) {
@@ -105,16 +106,16 @@ export default function TemplateManager({ isOpen, onClose, onTemplatesUpdated, c
     setIsLoading(true);
     // Encode category as Custom|Category_Name|Icon
     const encodedCategory = `Custom|${formCategory}|${formIcon}`;
-    const templateId = editingId || `custom-temp-${Date.now()}`;
 
+    // No client-side id: note_templates.id is a uuid the database mints.
+    // The old `custom-temp-<timestamp>` text couldn't be a uuid, which is
+    // why visit_notes.template_id could never reference a real template.
     const payload = {
-      id: templateId,
       title: formTitle.trim(),
       category: encodedCategory,
       content: formContent.trim(),
-      // note_templates.created_by is a uuid FK to auth.users(id) -- must be
-      // the real signed-in user's id, not their username/email string.
-      created_by: currentUser?.id || null
+      // created_by is a FK to staff(id) -- staffId, not the auth user id.
+      created_by: currentUser?.staffId || null
     };
 
     try {

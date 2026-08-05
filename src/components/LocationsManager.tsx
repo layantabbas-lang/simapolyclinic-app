@@ -10,7 +10,7 @@ interface LocationsManagerProps {
 }
 
 export interface DoctorLocation {
-  id: number;
+  id: string;
   doctor_id: string;
   name: string;
   is_active: boolean;
@@ -28,7 +28,7 @@ export default function LocationsManager({ isOpen, onClose, currentUser }: Locat
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   const [newName, setNewName] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
 
   useEffect(() => {

@@ -420,7 +420,7 @@ interface AppointmentRow {
   room: string;
   schedule_time: string;
   duration_hours: number;
-  location_id?: number | null;
+  location_id?: string | null;
   status?: "scheduled" | "checked-in" | "completed";
 }
 
@@ -1609,7 +1609,9 @@ export default function PatientsDirectory({
       note_data: activeMyNote.note_data || null,
       visit_date: new Date().toISOString(),
       created_by: currentUser?.staffId || null,
-      location_id: activeNoteLocationId ? Number(activeNoteLocationId) : null,
+      // doctor_locations.id is a uuid -- Number() on it gave NaN, which
+      // serialises to null, so the chosen location was silently dropped.
+      location_id: activeNoteLocationId || null,
     };
 
     try {
@@ -3880,11 +3882,13 @@ Question Responses: [${gad7Answers.join(", ")}]`;
                                           .from("note_templates")
                                           .insert([
                                             {
-                                              id: newTemp.id,
+                                              // id is minted by the database (uuid).
                                               title: newTemp.title,
                                               category: newTemp.category,
                                               content: newTemp.content,
-                                              created_by: currentUser?.username || "anonymous"
+                                              // FK to staff(id) -- a username string
+                                              // was never a valid value here.
+                                              created_by: currentUser?.staffId || null
                                             }
                                           ]);
                                         if (error) {
