@@ -12,6 +12,7 @@ import DOMPurify from "dompurify";
 import { supabase, authedFetch } from "../supabaseClient";
 import { useVisitNotes, VisitNote } from "./VisitNotesManager";
 import { staticTests, ClinicalTest } from "./TestManager";
+import PatientOrders from "./PatientOrders";
 
 // The clinical note editor is a contentEditable div that reads/writes raw
 // HTML (rich text formatting, pasted content, inserted templates). Every
@@ -477,7 +478,7 @@ export default function PatientsDirectory({
   const [isDataLoading, setIsDataLoading] = useState(false);
 
   // SIMA Clinical Workspace States
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"chart_review" | "synopsis" | "assessment" | "plan" | "medications" | "contact_log">("chart_review");
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"chart_review" | "synopsis" | "assessment" | "plan" | "orders" | "medications" | "contact_log">("chart_review");
 
   // Current Medications List -- doctor's own med-rec reference list of what
   // the patient is currently taking. Deliberately separate from the
@@ -3104,6 +3105,17 @@ export default function PatientsDirectory({
                   </button>
                   <button
                     type="button"
+                    onClick={() => setActiveWorkspaceTab("orders")}
+                    className={`px-3 py-1.5 rounded text-[11px] font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
+                      activeWorkspaceTab === "orders"
+                        ? "bg-[var(--theme-accent)] text-white border-[var(--theme-accent)] shadow-xs"
+                        : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
+                    }`}
+                  >
+                    <Syringe size={12} /> Orders
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setActiveWorkspaceTab("medications")}
                     className={`px-3 py-1.5 rounded text-[11px] font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
                       activeWorkspaceTab === "medications"
@@ -5263,6 +5275,14 @@ Question Responses: [${gad7Answers.join(", ")}]`;
                         </ul>
                       </div>
                     </div>
+                  )}
+
+                  {activeWorkspaceTab === "orders" && (
+                    <PatientOrders
+                      patientId={selectedPatient.id}
+                      currentUser={currentUser as any}
+                      onToast={triggerToast}
+                    />
                   )}
 
                   {activeWorkspaceTab === "medications" && (

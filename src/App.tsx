@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, ChevronDown, FileText, FlaskConical, LogOut, MapPin, Receipt, UserCog, Users, Wrench } from "lucide-react";
+import { CalendarDays, ChevronDown, FileText, FlaskConical, LayoutDashboard, LogOut, MapPin, Receipt, UserCog, Users, Wrench } from "lucide-react";
 import SignIn from "./components/SignIn";
 import ResetPassword from "./components/ResetPassword";
+import Dashboard from "./components/Dashboard";
 import PatientsDirectory from "./components/PatientsDirectory";
 import Appointments from "./components/Appointments";
 import Billing from "./components/Billing";
@@ -14,13 +15,13 @@ import { restoreSession } from "./authSession";
 import { isConfigured, supabase } from "./supabaseClient";
 import { UserSession } from "./types";
 
-type ViewMode = "patients" | "appointments" | "billing";
+type ViewMode = "dashboard" | "patients" | "appointments" | "billing";
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("patients");
+  const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
   const [isMyToolsOpen, setIsMyToolsOpen] = useState(false);
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
   const [isTestManagerOpen, setIsTestManagerOpen] = useState(false);
@@ -106,6 +107,17 @@ export default function App() {
           className="h-11 flex items-center gap-1 px-4"
           style={{ background: "var(--theme-accent-dark)" }}
         >
+          <button
+            onClick={() => setViewMode("dashboard")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
+            style={{
+              background: viewMode === "dashboard" ? "rgba(255,255,255,0.15)" : "transparent",
+              color: "#fcfdfe",
+            }}
+          >
+            <LayoutDashboard size={14} style={{ color: "var(--theme-accent)" }} />
+            Dashboard
+          </button>
           <button
             onClick={() => setViewMode("patients")}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
@@ -200,6 +212,7 @@ export default function App() {
 
         {/* Page container */}
         <main className="flex-1">
+          {viewMode === "dashboard" && <Dashboard currentUser={currentUser} />}
           {viewMode === "patients" && <PatientsDirectory currentUser={currentUser} />}
           {viewMode === "appointments" && <Appointments currentUser={currentUser} />}
           {viewMode === "billing" && <Billing currentUser={currentUser} />}
