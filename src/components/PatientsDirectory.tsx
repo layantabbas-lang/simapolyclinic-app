@@ -1678,19 +1678,14 @@ export default function PatientsDirectory({
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
   // Fetch patient physical metrics & vitals history
-  const fetchPatientVitals = async (patientMrn: number | string, patientName: string) => {
+  const fetchPatientVitals = async (patientId: string, patientName: string) => {
     setIsVitalsLoading(true);
     try {
-      const numericMrn = parseInt(String(patientMrn), 10);
-      let res: any = null;
-
-      if (!isNaN(numericMrn)) {
-        res = await supabase
-          .from("patient_vitals")
-          .select("*")
-          .eq("patient_mrn", numericMrn)
-          .order("recorded_at", { ascending: false });
-      }
+      const res: any = await supabase
+        .from("vitals")
+        .select("*")
+        .eq("patient_id", patientId)
+        .order("recorded_at", { ascending: false });
 
       if (res && res.error) {
         console.warn("Could not fetch patient vitals from database:", res.error.message);
@@ -1718,8 +1713,8 @@ export default function PatientsDirectory({
 
           return {
             id: vital.id,
-            patient_mrn: vital.patient_mrn,
-            patient_name: vital.patient_name || patientName,
+            patient_id: vital.patient_id,
+            patient_name: patientName,
             height: height ? parseFloat(height) : null,
             weight: weight ? parseFloat(weight) : null,
             blood_pressure: bp,
@@ -1748,74 +1743,53 @@ export default function PatientsDirectory({
       return;
     }
 
-    const mrnValue = parseInt(String(selectedPatient.mrn || selectedPatient.id), 10) || 123456789;
-
     // Parse blood pressure
     const bpParts = bp.split("/");
     const systolic = parseInt(bpParts[0]?.trim(), 10) || null;
     const diastolic = bpParts[1] ? (parseInt(bpParts[1].trim(), 10) || null) : null;
     const parsedHr = parseInt(hr.trim(), 10) || null;
 
-    // Try New Schema first
     const newPayload = {
-      patient_mrn: mrnValue,
+      patient_id: selectedPatient.id,
       height_cm: h,
       weight_kg: w,
       systolic_bp: systolic,
       diastolic_bp: diastolic,
       heart_rate: parsedHr,
+      recorded_by: currentUser?.staffId || null,
       recorded_at: new Date().toISOString(),
-      created_at: new Date().toISOString()
     };
 
     try {
       const { error } = await supabase
-        .from("patient_vitals")
+        .from("vitals")
         .insert([newPayload])
         .select();
 
       if (error) throw error;
 
-
       triggerToast("Vitals registered and saved in database!");
-      fetchPatientVitals(mrnValue, selectedPatient.name);
+      fetchPatientVitals(selectedPatient.id, selectedPatient.name);
     } catch (err: any) {
-      console.warn("Could not save vitals in DB (saving locally in session fallback):", err.message);
-      // Fallback: save to local state for seamless immediate preview
-      const localRecord = {
-        id: `local-vital-${Date.now()}`,
-        patient_mrn: mrnValue,
-        patient_name: selectedPatient.name,
-        height: h,
-        weight: w,
-        blood_pressure: bp,
-        heart_rate: hr,
-        created_at: new Date().toISOString(),
-        is_local_fallback: true
-      };
-      setPatientVitals(prev => [localRecord, ...prev]);
-      triggerToast("Saved locally (Offline Fallback)");
+      // No local fallback here on purpose: showing these vitals as if they
+      // saved, when the database rejected them, is how they silently vanish
+      // on the next refresh. Say what actually happened instead.
+      console.error("Could not save vitals:", err);
+      triggerToast(`Could not save these vitals: ${err.message || "Unknown error"}. Nothing was saved -- please try again.`);
     }
   };
 
   const handleDeleteVitals = async (vitalId: string | number) => {
-    if (typeof vitalId === "string" && vitalId.startsWith("local-vital-")) {
-      setPatientVitals(prev => prev.filter(v => v.id !== vitalId));
-      triggerToast("Local record cleared.");
-      return;
-    }
-
     try {
       const { error } = await supabase
-        .from("patient_vitals")
+        .from("vitals")
         .delete()
         .eq("id", vitalId);
 
       if (error) throw error;
       triggerToast("Vital record deleted!");
       if (selectedPatient) {
-        const mrnValue = parseInt(String(selectedPatient.mrn || selectedPatient.id), 10) || 123456789;
-        fetchPatientVitals(mrnValue, selectedPatient.name);
+        fetchPatientVitals(selectedPatient.id, selectedPatient.name);
       }
     } catch (err: any) {
       console.warn("Could not delete vital record from Supabase:", err.message);
@@ -2001,7 +1975,7 @@ export default function PatientsDirectory({
         }
 
         // 4. Fetch physical metrics & vitals history
-        await fetchPatientVitals(selectedPatient.mrn || selectedPatient.id, selectedPatient.name);
+        await fetchPatientVitals(selectedPatient.id, selectedPatient.name);
 
         // 5. Fetch patient labs from Supabase with safe local mock fallback
         try {
@@ -2435,18 +2409,18 @@ export default function PatientsDirectory({
           const parsedHr = parseInt(newPatientHr.trim(), 10) || null;
 
           const newVitalsPayload = {
-            patient_mrn: created.mrn,
+            patient_id: created.id,
             height_cm: parseFloat(newPatientHeight.trim()) || 0,
             weight_kg: parseFloat(newPatientWeight.trim()) || 0,
             systolic_bp: systolic,
             diastolic_bp: diastolic,
             heart_rate: parsedHr,
+            recorded_by: currentUser?.staffId || null,
             recorded_at: new Date().toISOString(),
-            created_at: new Date().toISOString()
           };
 
           try {
-            const { error: vitalsErr } = await supabase.from("patient_vitals").insert([newVitalsPayload]);
+            const { error: vitalsErr } = await supabase.from("vitals").insert([newVitalsPayload]);
             if (vitalsErr) throw vitalsErr;
           } catch (vitalsErr: any) {
             console.warn("Could not insert initial vitals in database:", vitalsErr.message);
@@ -7013,18 +6987,10 @@ Question Responses: [${gad7Answers.join(", ")}]`;
                     {patientVitals.map((vital: any) => {
                       const bmiInfo = calculateBMI(vital.height, vital.weight);
                       return (
-                        <div 
+                        <div
                           key={vital.id}
-                          className={`border rounded-lg p-3 bg-slate-50/50 flex flex-col gap-2 relative group hover:border-[#c2d5e7] transition-all ${
-                            vital.is_local_fallback ? "border-amber-200 bg-amber-50/20" : "border-slate-100"
-                          }`}
+                          className="border border-slate-100 rounded-lg p-3 bg-slate-50/50 flex flex-col gap-2 relative group hover:border-[#c2d5e7] transition-all"
                         >
-                          {vital.is_local_fallback && (
-                            <span className="absolute top-2 right-10 text-[7px] bg-amber-100 text-amber-800 px-1 py-0.2 rounded font-bold uppercase tracking-wider">
-                              Session Local Record
-                            </span>
-                          )}
-
                           <button
                             onClick={() => handleDeleteVitals(vital.id)}
                             className="absolute top-2.5 right-2.5 text-slate-400 hover:text-red-500 cursor-pointer p-1 rounded-md hover:bg-slate-100 transition-colors"
