@@ -123,12 +123,12 @@ export default function App() {
 
         {/* Nav / My Tools bar — mirrors SIMA's workspace tab row */}
         <div
-          className="h-11 flex items-center gap-1 px-4"
+          className="h-11 flex items-center gap-1 px-4 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           style={{ background: "var(--theme-accent-dark)" }}
         >
           <button
             onClick={() => setViewMode("dashboard")}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold shrink-0 whitespace-nowrap"
             style={{
               background: viewMode === "dashboard" ? "rgba(255,255,255,0.15)" : "transparent",
               color: "#fcfdfe",
@@ -139,7 +139,7 @@ export default function App() {
           </button>
           <button
             onClick={() => setViewMode("patients")}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold shrink-0 whitespace-nowrap"
             style={{
               background: viewMode === "patients" ? "rgba(255,255,255,0.15)" : "transparent",
               color: "#fcfdfe",
@@ -150,7 +150,7 @@ export default function App() {
           </button>
           <button
             onClick={() => setViewMode("appointments")}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold shrink-0 whitespace-nowrap"
             style={{
               background: viewMode === "appointments" ? "rgba(255,255,255,0.15)" : "transparent",
               color: "#fcfdfe",
@@ -161,7 +161,7 @@ export default function App() {
           </button>
           <button
             onClick={() => setViewMode("billing")}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold shrink-0 whitespace-nowrap"
             style={{
               background: viewMode === "billing" ? "rgba(255,255,255,0.15)" : "transparent",
               color: "#fcfdfe",
@@ -174,7 +174,7 @@ export default function App() {
               patient who thinks they have an appointment and doesn't. */}
           <button
             onClick={() => setViewMode("requests")}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold shrink-0 whitespace-nowrap"
             style={{
               background: viewMode === "requests" ? "rgba(255,255,255,0.15)" : "transparent",
               color: "#fcfdfe",
@@ -191,7 +191,7 @@ export default function App() {
           <div className="relative">
             <button
               onClick={() => setIsMyToolsOpen((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold shrink-0 whitespace-nowrap"
               style={{
                 background: isMyToolsOpen || isTemplateManagerOpen || isTestManagerOpen || isLocationsManagerOpen
                   ? "rgba(255,255,255,0.15)" : "transparent",
