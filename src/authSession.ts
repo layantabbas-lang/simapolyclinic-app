@@ -20,6 +20,7 @@ export async function buildSessionFromAuthUser(authUser: { id: string; email?: s
 
   return {
     id: authUser.id,
+    staffId: staffRow?.id,
     username: authUser.email || "",
     name: staffRow?.full_name || authUser.email || "Staff",
     email: authUser.email || "",

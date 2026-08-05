@@ -350,19 +350,30 @@ export function VisitNotesProvider({ children }: { children: React.ReactNode }) 
       prev.map((w) => (w.windowId === windowId ? { ...w, isSaving: true } : w))
     );
 
-    let authUserId: string | null = null;
+    // doctor_id/created_by are FKs to staff(id) -- NOT the same value as
+    // the Supabase Auth user id. staff has its own id, separate from
+    // staff.user_id (which is what the auth session actually gives us),
+    // so this needs its own lookup rather than using session.user.id
+    // directly.
+    let staffId: string | null = null;
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.id) {
-        authUserId = session.user.id;
+        const { data: staffRow } = await supabase
+          .from("staff")
+          .select("id")
+          .eq("user_id", session.user.id)
+          .maybeSingle();
+        staffId = staffRow?.id || null;
       }
     } catch (e) {
-      console.warn("Could not get auth user for created_by field:", e);
+      console.warn("Could not resolve staff id for created_by field:", e);
     }
 
     const notePayload: Partial<VisitNote> = {
       appointment_id: win.appointmentId,
       patient_id: win.patientId || null,
+      doctor_id: staffId,
       content: win.content,
       blood_pressure: win.bloodPressure || null,
       heart_rate: win.heartRate || null,
@@ -371,7 +382,7 @@ export function VisitNotesProvider({ children }: { children: React.ReactNode }) 
       template_id: win.templateId,
       note_data: win.noteData || null,
       visit_date: new Date().toISOString(),
-      created_by: authUserId,
+      created_by: staffId,
     } as any;
 
     try {

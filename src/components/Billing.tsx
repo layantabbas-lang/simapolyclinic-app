@@ -459,7 +459,7 @@ function InvoiceDetailModal({
         currency: "USD",
         amount_usd: amount,
         reference: reference.trim() || null,
-        received_by: currentUser?.id || null,
+        received_by: currentUser?.staffId || null,
       }]);
       if (payError) throw payError;
       onChanged();

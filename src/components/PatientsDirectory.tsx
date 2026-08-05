@@ -444,7 +444,7 @@ export default function PatientsDirectory({
 }: {
   externalSearchQuery?: string;
   onClearExternalSearch?: () => void;
-  currentUser?: { id?: string; username: string; name: string; role: string } | null;
+  currentUser?: { id?: string; staffId?: string; username: string; name: string; role: string } | null;
 } = {}) {
   const { openNoteWindow, activeWindows } = useVisitNotes();
 
@@ -1912,7 +1912,7 @@ export default function PatientsDirectory({
 
     const payload: any = {
       patient_id: selectedPatient.id || null,
-      doctor_id: currentUser?.id || null,
+      doctor_id: currentUser?.staffId || null,
       content: finalContent,
       appointment_id: activeNoteAppointmentId,
       status: signOff ? "final" : "draft",
@@ -1922,7 +1922,7 @@ export default function PatientsDirectory({
       follow_up_date: activeNoteFollowUp || null,
       note_data: activeMyNote.note_data || null,
       visit_date: new Date().toISOString(),
-      created_by: currentUser?.id || null,
+      created_by: currentUser?.staffId || null,
       location_id: activeNoteLocationId ? Number(activeNoteLocationId) : null,
     };
 
@@ -2670,7 +2670,7 @@ export default function PatientsDirectory({
         email: newPatientEmail.trim() || null,
         address_line: newPatientAddress.trim() || null,
         blood_type: newPatientBloodType || null,
-        created_by: currentUser?.id || null,
+        created_by: currentUser?.staffId || null,
         // No home in this app's schema (a leaner model than SIMA's): place
         // of birth, marital status, occupation, education level, emergency
         // contact. Not sent -- unlike SIMA's table these columns don't
@@ -2746,7 +2746,7 @@ export default function PatientsDirectory({
             const { error: histErr } = await supabase.from("patient_clinical_history").upsert({
               patient_id: resultData.id,
               history: newPatientHistory.trim(),
-              updated_by: currentUser?.id || null,
+              updated_by: currentUser?.staffId || null,
             });
             if (histErr) throw histErr;
           } catch (histErr) {
@@ -2759,14 +2759,14 @@ export default function PatientsDirectory({
           const contentValue = newPatientInitialNote.trim() || "Initial clinical evaluation note.";
           const initialNotePayload: any = {
             patient_id: created.id,
-            doctor_id: currentUser?.id || null,
+            doctor_id: currentUser?.staffId || null,
             content: contentValue,
             blood_pressure: newPatientBp.trim() || null,
             heart_rate: newPatientHr.trim() || null,
             diagnosis: newPatientInitialDx.trim() || null,
             follow_up_date: newPatientInitialFollowUp.trim() || null,
             visit_date: new Date().toISOString(),
-            created_by: currentUser?.id || null,
+            created_by: currentUser?.staffId || null,
           };
           try {
             const { error } = await supabase.from("visit_notes").insert([initialNotePayload]);
@@ -2966,7 +2966,7 @@ export default function PatientsDirectory({
         const { error: histErr } = await supabase.from("patient_clinical_history").upsert({
           patient_id: selectedPatient.id,
           history: editedHistory || null,
-          updated_by: currentUser?.id || null,
+          updated_by: currentUser?.staffId || null,
         });
         if (histErr) throw histErr;
       } catch (histErr) {
@@ -4087,14 +4087,14 @@ Registry Status: VERIFIED`;
 
                                       const notePayload = {
                                         patient_id: selectedPatient.id || null,
-                                        doctor_id: currentUser?.id || null,
+                                        doctor_id: currentUser?.staffId || null,
                                         content: reportText,
                                         blood_pressure: activeNoteBp || null,
                                         heart_rate: activeNoteHr || null,
                                         diagnosis: "F41.1 Generalized Anxiety Disorder",
                                         follow_up_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                                         visit_date: new Date().toISOString(),
-                                        created_by: currentUser?.id || null,
+                                        created_by: currentUser?.staffId || null,
                                         note_data: {
                                           formId: "gad-7",
                                           title: "GAD-7 Anxiety Scale Assessment",
