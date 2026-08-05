@@ -30,9 +30,12 @@ interface RequestRow {
 
 interface PatientLite { id: string; first_name: string; last_name: string; mrn: string; phone: string | null; }
 
-const formatSlot = (iso: string) =>
+// Clinic time, not the device's -- these hours end up in the message the
+// patient is sent, so a staff phone on another timezone must not change them.
+const formatSlot = (iso: string, tz?: string | null) =>
   new Date(iso).toLocaleString("en-GB", {
     weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+    ...(tz ? { timeZone: tz } : {}),
   });
 
 export default function BookingRequests({
@@ -56,7 +59,7 @@ export default function BookingRequests({
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [clinic, setClinic] = useState<{ clinic_name: string; phone: string | null; address: string | null; whatsapp_template: string | null; default_country_code: string } | null>(null);
+  const [clinic, setClinic] = useState<{ clinic_name: string; phone: string | null; address: string | null; whatsapp_template: string | null; default_country_code: string; default_slot_minutes: number; timezone: string | null } | null>(null);
   const [doctors, setDoctors] = useState<{ id: string; full_name: string }[]>([]);
 
   const fetchRows = async () => {
@@ -83,7 +86,7 @@ export default function BookingRequests({
     (async () => {
       const { data: cs } = await supabase
         .from("clinic_settings")
-        .select("clinic_name, phone, address, whatsapp_template, default_country_code")
+        .select("clinic_name, phone, address, whatsapp_template, default_country_code, default_slot_minutes, timezone")
         .limit(1).maybeSingle();
       setClinic(cs as any);
       const { data: st } = await supabase
@@ -135,9 +138,12 @@ export default function BookingRequests({
     setSaving(true);
     setConfirmError(null);
     try {
-      // Slot length: fall back to 20 minutes, the schema's default.
+      // Must match the slot length the patient was offered. If this is
+      // shorter than the slot, the tail of a real appointment looks free
+      // and someone else can book over it.
+      const slotMinutes = clinic?.default_slot_minutes || 30;
       const start = new Date(confirming.requested_at);
-      const end = new Date(start.getTime() + 20 * 60000);
+      const end = new Date(start.getTime() + slotMinutes * 60000);
 
       const { data: appt, error: apptErr } = await supabase
         .from("appointments")
@@ -212,8 +218,14 @@ export default function BookingRequests({
     const when = new Date(r.requested_at);
     const message = fillTemplate(clinic?.whatsapp_template || DEFAULT_WHATSAPP_TEMPLATE, {
       name: r.full_name,
-      date: when.toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }),
-      time: when.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+      date: when.toLocaleDateString("en-GB", {
+        weekday: "long", day: "2-digit", month: "long", year: "numeric",
+        ...(clinic?.timezone ? { timeZone: clinic.timezone } : {}),
+      }),
+      time: when.toLocaleTimeString("en-GB", {
+        hour: "2-digit", minute: "2-digit",
+        ...(clinic?.timezone ? { timeZone: clinic.timezone } : {}),
+      }),
       doctor: doctorName,
       clinic: clinic?.clinic_name || "the clinic",
       phone: clinic?.phone || "",
@@ -255,7 +267,7 @@ export default function BookingRequests({
             </div>
             <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
               <span className="flex items-center gap-1"><Phone size={10} /> {r.phone}</span>
-              <span className="flex items-center gap-1"><CalendarClock size={10} /> {formatSlot(r.requested_at)}</span>
+              <span className="flex items-center gap-1"><CalendarClock size={10} /> {formatSlot(r.requested_at, clinic?.timezone)}</span>
               {r.staff?.full_name && <span className="flex items-center gap-1"><UserRound size={10} /> {r.staff.full_name}</span>}
             </div>
             {r.reason && <p className="text-[11px] text-slate-600 mt-1 italic">"{r.reason}"</p>}
@@ -358,7 +370,7 @@ export default function BookingRequests({
               <div>
                 <span className="font-black text-xs text-[#2a5178] uppercase tracking-wide block">Confirm request</span>
                 <span className="text-[10px] text-slate-400 font-semibold">
-                  {confirming.full_name} · {formatSlot(confirming.requested_at)}
+                  {confirming.full_name} · {formatSlot(confirming.requested_at, clinic?.timezone)}
                 </span>
               </div>
               <button onClick={() => setConfirming(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
