@@ -2,7 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
-      "comment": "Single-page app: the client decides what /book renders, but Vercel only has one index.html on disk, so any non-API path that isn't a real file must serve it. Without this /book is a 404. The negative lookahead keeps /api/* on the serverless functions.",
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
