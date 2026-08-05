@@ -2175,8 +2175,8 @@ export default function PatientsDirectory({
         // in here rather than embedded, to keep the join explicit and simple.
         const { data: histRows } = await supabase
           .from("patient_clinical_history")
-          .select("patient_mrn, history");
-        const historyByMrn = new Map((histRows || []).map((h: any) => [Number(h.patient_mrn), h.history]));
+          .select("patient_id, history");
+        const historyByPatientId = new Map((histRows || []).map((h: any) => [String(h.patient_id), h.history]));
 
         // Map any existing schemas to our standard interface dynamically
         const mappedData: Patient[] = data.map((item: any) => {
@@ -2201,7 +2201,7 @@ export default function PatientsDirectory({
             gender: item.gender || "Female",
             phone,
             email: item.email || "",
-            history: (item.mrn != null ? historyByMrn.get(Number(item.mrn)) : undefined) || "None declared.",
+            history: (item.id ? historyByPatientId.get(String(item.id)) : undefined) || "None declared.",
             address: item.address || "",
             created_at: item.created_at,
             mother_name: item.mother_name || "",
@@ -2744,7 +2744,7 @@ export default function PatientsDirectory({
         if (newPatientHistory.trim()) {
           try {
             const { error: histErr } = await supabase.from("patient_clinical_history").upsert({
-              patient_mrn: created.mrn,
+              patient_id: resultData.id,
               history: newPatientHistory.trim(),
               updated_by: currentUser?.id || null,
             });
@@ -2921,39 +2921,50 @@ export default function PatientsDirectory({
       return;
     }
     setIsEditSaving(true);
+    // Matches this app's actual patients schema (0003_patients.sql) --
+    // same rename SIMA's column names needed in handleCreatePatient.
+    // place_of_birth/marital_status/occupation/education_level/emergency
+    // contact have no column here and are dropped rather than sent.
     const payload: any = {
       first_name: toTitleCase(editForm.first_name || ""),
       father_name: toTitleCase(editForm.father_name || "") || null,
-      surname: toTitleCase(editForm.surname || ""),
-      birth_date: editDobIso,
-      gender: editForm.gender,
-      phone_number: (editForm.phone || "").trim() || null,
+      last_name: toTitleCase(editForm.surname || ""),
+      date_of_birth: editDobIso,
+      gender: (editForm.gender || "").toLowerCase() || null,
+      phone: (editForm.phone || "").trim() || null,
       email: (editForm.email || "").trim() || null,
-      address: (editForm.address || "").trim() || null,
+      address_line: (editForm.address || "").trim() || null,
       mother_name: toTitleCase(editForm.mother_name || "") || null,
       national_id: (editForm.national_id || "").trim() || null,
       nationality: toTitleCase(editForm.nationality || "") || null,
-      place_of_birth: toTitleCase(editForm.place_of_birth || "") || null,
-      marital_status: editForm.marital_status || null,
-      occupation: (editForm.occupation || "").trim() || null,
-      education_level: editForm.education_level || null,
-      emergency_contact_name: toTitleCase(editForm.emergency_contact_name || "") || null,
-      emergency_contact_relation: (editForm.emergency_contact_relation || "").trim() || null,
-      emergency_contact_phone: (editForm.emergency_contact_phone || "").trim() || null,
-      insurance_provider: (editForm.insurance_provider || "").trim() || null,
-      insurance_number: (editForm.insurance_number || "").trim() || null,
       blood_type: editForm.blood_type || null
     };
-    const editMrn = Number(selectedPatient.mrn ?? selectedPatient.id);
     const editedHistory = (editForm.history || "").trim();
     try {
-      const { error } = await supabase.from("patients").update(payload).eq("mrn", editMrn);
+      const { error } = await supabase.from("patients").update(payload).eq("id", selectedPatient.id);
       if (error) throw error;
 
-      // history lives in its own is_clinical()-gated table (see fetchPatients).
+      // Insurance lives in its own patient_payers table here, not on
+      // patients directly.
+      const insuranceProvider = (editForm.insurance_provider || "").trim();
+      const insuranceNumber = (editForm.insurance_number || "").trim();
+      if (insuranceProvider || insuranceNumber) {
+        try {
+          await supabase.from("patient_payers").upsert({
+            patient_id: selectedPatient.id,
+            payer_type: "private_insurance",
+            payer_name: insuranceProvider || null,
+            policy_no: insuranceNumber || null,
+          });
+        } catch (payerErr) {
+          console.warn("Could not save insurance info:", payerErr);
+        }
+      }
+
+      // history lives in its own table (see fetchPatients).
       try {
         const { error: histErr } = await supabase.from("patient_clinical_history").upsert({
-          patient_mrn: editMrn,
+          patient_id: selectedPatient.id,
           history: editedHistory || null,
           updated_by: currentUser?.id || null,
         });
@@ -2964,14 +2975,22 @@ export default function PatientsDirectory({
 
       const updated: Patient = {
         ...selectedPatient,
-        ...payload,
-        phone: payload.phone_number || "",
+        phone: payload.phone || "",
         email: payload.email || "",
-        address: payload.address || "",
+        address: payload.address_line || "",
         history: editedHistory || "None declared.",
         father_name: payload.father_name || "",
         mother_name: payload.mother_name || "",
-        name: [payload.first_name, payload.father_name, payload.surname].filter(Boolean).join(" ")
+        surname: payload.last_name || "",
+        first_name: payload.first_name || "",
+        birth_date: payload.date_of_birth || selectedPatient.birth_date,
+        gender: editForm.gender || selectedPatient.gender,
+        national_id: payload.national_id || "",
+        nationality: payload.nationality || "",
+        blood_type: payload.blood_type || "",
+        insurance_provider: insuranceProvider || "",
+        insurance_number: insuranceNumber || "",
+        name: [payload.first_name, payload.father_name, payload.last_name].filter(Boolean).join(" ")
       };
       setPatients(prev => prev.map(p => (p.id === selectedPatient.id ? updated : p)));
       setSelectedPatient(updated);
