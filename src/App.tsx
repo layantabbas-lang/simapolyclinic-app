@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, ChevronDown, FileText, FlaskConical, LayoutDashboard, LogOut, MapPin, Receipt, UserCog, Users, Wrench } from "lucide-react";
+import { CalendarDays, ChevronDown, FileText, FlaskConical, Inbox, LayoutDashboard, LogOut, MapPin, Receipt, UserCog, Users, Wrench } from "lucide-react";
 import SignIn from "./components/SignIn";
 import ResetPassword from "./components/ResetPassword";
 import Dashboard from "./components/Dashboard";
+import PublicBooking from "./components/PublicBooking";
+import BookingRequests from "./components/BookingRequests";
 import PatientsDirectory from "./components/PatientsDirectory";
 import Appointments from "./components/Appointments";
 import Billing from "./components/Billing";
@@ -15,7 +17,12 @@ import { restoreSession } from "./authSession";
 import { isConfigured, supabase } from "./supabaseClient";
 import { UserSession } from "./types";
 
-type ViewMode = "dashboard" | "patients" | "appointments" | "billing";
+type ViewMode = "dashboard" | "patients" | "appointments" | "billing" | "requests";
+
+// Read once at module load rather than in state: the public booking page
+// is a different audience entirely, and this decides which app renders at
+// all. No router dependency for what is one extra entry point.
+const isPublicBookingRoute = /^\/book\/?$/.test(window.location.pathname);
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
@@ -30,6 +37,7 @@ export default function App() {
   // Set when the Dashboard asks to open a chart; cleared once
   // PatientsDirectory has actually selected that patient.
   const [pendingPatientId, setPendingPatientId] = useState<string | null>(null);
+  const [pendingRequestCount, setPendingRequestCount] = useState(0);
 
   useEffect(() => {
     restoreSession()
@@ -54,6 +62,14 @@ export default function App() {
     }
     setCurrentUser(null);
   };
+
+  // The patient-facing booking page is public: it renders before the
+  // session check and the sign-in gate, so a patient never sees a login
+  // screen. It reaches nothing but /api/book, so being outside the gate
+  // grants it no data access.
+  if (isPublicBookingRoute) {
+    return <PublicBooking />;
+  }
 
   if (isCheckingSession) {
     return (
@@ -154,6 +170,24 @@ export default function App() {
             <Receipt size={14} style={{ color: "var(--theme-accent)" }} />
             Billing
           </button>
+          {/* Badge is deliberately loud: a request nobody looks at is a
+              patient who thinks they have an appointment and doesn't. */}
+          <button
+            onClick={() => setViewMode("requests")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
+            style={{
+              background: viewMode === "requests" ? "rgba(255,255,255,0.15)" : "transparent",
+              color: "#fcfdfe",
+            }}
+          >
+            <Inbox size={14} style={{ color: "var(--theme-accent)" }} />
+            Requests
+            {pendingRequestCount > 0 && (
+              <span className="ml-0.5 px-1.5 rounded-full text-[10px] font-black bg-[#db7a78] text-white">
+                {pendingRequestCount}
+              </span>
+            )}
+          </button>
           <div className="relative">
             <button
               onClick={() => setIsMyToolsOpen((v) => !v)}
@@ -233,6 +267,9 @@ export default function App() {
           )}
           {viewMode === "appointments" && <Appointments currentUser={currentUser} />}
           {viewMode === "billing" && <Billing currentUser={currentUser} />}
+          {viewMode === "requests" && (
+            <BookingRequests currentUser={currentUser} onCountChange={setPendingRequestCount} />
+          )}
         </main>
       </div>
 
