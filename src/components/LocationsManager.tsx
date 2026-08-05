@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { MapPin, Plus, Trash2, Edit2, Save, X, Check, AlertCircle, EyeOff, Eye } from "lucide-react";
 import { supabase } from "../supabaseClient";
+import { UserSession } from "../types";
 
 interface LocationsManagerProps {
   isOpen: boolean;
   onClose: () => void;
-  currentUser?: { id?: string; username: string; name: string; role: string } | null;
+  currentUser?: UserSession | null;
 }
 
 export interface DoctorLocation {
@@ -40,13 +41,13 @@ export default function LocationsManager({ isOpen, onClose, currentUser }: Locat
   };
 
   const fetchLocations = async () => {
-    if (!currentUser?.id) return;
+    if (!currentUser?.staffId) return;
     setIsLoading(true);
     try {
       const { data, error } = await supabase
         .from("doctor_locations")
         .select("*")
-        .eq("doctor_id", currentUser.id)
+        .eq("doctor_id", currentUser.staffId)
         .order("sort_order")
         .order("created_at");
       if (error) throw error;
@@ -61,11 +62,11 @@ export default function LocationsManager({ isOpen, onClose, currentUser }: Locat
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim() || !currentUser?.id) return;
+    if (!newName.trim() || !currentUser?.staffId) return;
     try {
       const { data, error } = await supabase
         .from("doctor_locations")
-        .insert([{ doctor_id: currentUser.id, name: newName.trim(), sort_order: locations.length }])
+        .insert([{ doctor_id: currentUser.staffId, name: newName.trim(), sort_order: locations.length }])
         .select()
         .single();
       if (error) throw error;

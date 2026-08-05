@@ -29,12 +29,6 @@ export const MEDICATION_ROUTES = [
   "Ophthalmic", "Otic", "NG Tube",
 ];
 
-// The Orders tab used to be a structured Medication/Task form (order_type
-// toggle, dose/route/frequency fields). It's been replaced by free-text
-// quick entry (type an order, hit Enter, sign it) but the old form's code is
-// left in place and simply not rendered, in case it's ever needed again.
-const SHOW_LEGACY_ORDER_FORM = false;
-
 // Internal patient model
 export interface Patient {
   id: string;
@@ -478,328 +472,12 @@ export default function PatientsDirectory({
 
   // Lists of records for the selected patient
   const [patientAppointments, setPatientAppointments] = useState<AppointmentRow[]>([]);
-  const [activeAdmission, setActiveAdmission] = useState<any | null>(null);
   const [patientRecords, setPatientRecords] = useState<MedicalRecordRow[]>([]);
   const [patientNotes, setPatientNotes] = useState<VisitNote[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(false);
 
   // SIMA Clinical Workspace States
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"chart_review" | "synopsis" | "assessment" | "plan" | "orders" | "medications" | "contact_log">("chart_review");
-
-  // Doctor's Orders (medication or nursing task, recurring) for the selected patient
-  const [patientOrders, setPatientOrders] = useState<any[]>([]);
-  const [isOrdersLoading, setIsOrdersLoading] = useState(false);
-  const [isAddingOrder, setIsAddingOrder] = useState(false);
-  const [orderInventory, setOrderInventory] = useState<any[]>([]);
-  const [orderForm, setOrderForm] = useState({
-    order_type: "medication" as "medication" | "task",
-    drug_input: "",
-    dose_quantity: "",
-    route: "",
-    task_name: "",
-    instructions: "",
-    is_one_time: false,
-    frequency_hours: "8",
-    total_occurrences: "",
-  });
-  const [orderError, setOrderError] = useState<string | null>(null);
-
-  const fetchPatientOrders = async (patientMrn: number | string) => {
-    setIsOrdersLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("patient_orders")
-        .select("*, pharmacy_inventory(drug_name, unit, strength), profiles!ordered_by(full_name), patient_order_administrations(due_at, completed_at, status, recorded_value, completed_by, profiles!completed_by(full_name))")
-        .eq("patient_mrn", patientMrn)
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      setPatientOrders(data || []);
-    } catch (err: any) {
-      console.error("Could not load patient orders:", err.message);
-    } finally {
-      setIsOrdersLoading(false);
-    }
-  };
-
-  const fetchOrderInventory = async () => {
-    const { data } = await supabase.from("pharmacy_inventory").select("id, drug_name, strength, unit, unit_price").order("drug_name", { ascending: true });
-    setOrderInventory(data || []);
-  };
-
-  const resetOrderForm = () => setOrderForm({ order_type: "medication", drug_input: "", dose_quantity: "", route: "", task_name: "", instructions: "", is_one_time: false, frequency_hours: "8", total_occurrences: "" });
-
-  // Shared label used both for the drug datalist suggestions and for matching
-  // what the doctor typed back to a catalog item on submit.
-  const getDrugLabel = (i: any) => `${i.drug_name}${i.strength ? ` (${i.strength})` : ""}`;
-
-  // Mirrors the nurse's Care Queue "next due" calculation, so the doctor sees
-  // the same overdue/due-now/upcoming picture when reviewing an order here.
-  const computeOrderNextDue = (order: any): Date => {
-    const done = (order.patient_order_administrations || []).filter((a: any) => a.status === "done");
-    if (done.length === 0) return new Date(order.start_at);
-    const lastDue = done.reduce((latest: Date, a: any) => {
-      const d = new Date(a.due_at);
-      return d > latest ? d : latest;
-    }, new Date(0));
-    return new Date(lastDue.getTime() + order.frequency_hours * 3600000);
-  };
-
-  const handleCreateOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedPatient) return;
-    setOrderError(null);
-
-    const patientMrn = parseInt(String(selectedPatient.mrn || selectedPatient.id), 10);
-    if (!patientMrn) { setOrderError("Could not resolve this patient's MRN."); return; }
-
-    if (orderForm.order_type === "medication" && !orderForm.drug_input.trim()) {
-      setOrderError("Type or select a drug for a medication order."); return;
-    }
-    if (orderForm.order_type === "task" && !orderForm.task_name.trim()) {
-      setOrderError("Name the task (e.g. \"Vitals Check\")."); return;
-    }
-    // One-time orders don't need a real recurrence interval -- they're given
-    // once and then auto-complete after a single administration. Store a
-    // harmless placeholder frequency (the DB requires frequency_hours > 0,
-    // but it's never used again since total_occurrences will be 1).
-    const freq = orderForm.is_one_time ? 24 : parseFloat(orderForm.frequency_hours);
-    if (!orderForm.is_one_time && (!freq || freq <= 0)) { setOrderError("Enter a valid frequency in hours."); return; }
-
-    // If what the doctor typed matches a catalog drug exactly, keep linking
-    // inventory_id (so stock deduction on administration keeps working).
-    // Otherwise it's a drug the pharmacy doesn't stock -- save it as free text.
-    const matchedInventory = orderForm.order_type === "medication"
-      ? orderInventory.find((i: any) => getDrugLabel(i).trim().toLowerCase() === orderForm.drug_input.trim().toLowerCase())
-      : null;
-
-    try {
-      const { error } = await supabase.from("patient_orders").insert({
-        patient_mrn: patientMrn,
-        ordered_by: currentUser?.id || null,
-        order_type: orderForm.order_type,
-        inventory_id: orderForm.order_type === "medication" && matchedInventory ? matchedInventory.id : null,
-        custom_drug_name: orderForm.order_type === "medication" && !matchedInventory ? orderForm.drug_input.trim() : null,
-        dose_quantity: orderForm.order_type === "medication" ? parseFloat(orderForm.dose_quantity) || 1 : null,
-        route: orderForm.order_type === "medication" ? (orderForm.route || null) : null,
-        task_name: orderForm.order_type === "task" ? orderForm.task_name.trim() : null,
-        instructions: orderForm.instructions.trim() || null,
-        frequency_hours: freq,
-        total_occurrences: orderForm.is_one_time ? 1 : (orderForm.total_occurrences ? parseInt(orderForm.total_occurrences, 10) : null),
-      });
-      if (error) throw new Error(error.message);
-      triggerToast("Order placed. It will appear on the nurse's Care Queue.");
-      resetOrderForm();
-      setIsAddingOrder(false);
-      fetchPatientOrders(patientMrn);
-    } catch (err: any) {
-      setOrderError(err.message || "Could not place the order.");
-    }
-  };
-
-  const handleDiscontinueOrder = async (orderId: number) => {
-    if (!confirm("Discontinue this order? It will stop appearing on the nurse's queue.")) return;
-    try {
-      const { error } = await supabase
-        .from("patient_orders")
-        .update({ status: "discontinued", discontinued_at: new Date().toISOString(), discontinued_by: currentUser?.id || null })
-        .eq("id", orderId);
-      if (error) throw new Error(error.message);
-      triggerToast("Order discontinued.");
-      if (selectedPatient) fetchPatientOrders(selectedPatient.mrn || selectedPatient.id);
-    } catch (err: any) {
-      triggerToast(`Could not discontinue order: ${err.message}`);
-    }
-  };
-
-  // ─── Free-text quick order entry (draft → sign workflow) ──────────────────
-  // The old structured Medication/Task form above (isAddingOrder / orderForm /
-  // handleCreateOrder) is kept in the code but no longer rendered -- see
-  // SHOW_LEGACY_ORDER_FORM below. Doctors now just type an order in plain
-  // English and hit Enter; it's captured immediately as a `draft` row (drafts
-  // are invisible to the nurse Care Queue and pharmacy, which only ever query
-  // status = 'active'). Drafts sit in the middle column where they can be
-  // edited or discarded, then signed -- individually or all at once -- which
-  // is what actually activates them.
-  const [quickOrderText, setQuickOrderText] = useState("");
-  const [isSubmittingQuickOrder, setIsSubmittingQuickOrder] = useState(false);
-  const quickOrderInputRef = useRef<HTMLInputElement | null>(null);
-  const [editingDraftId, setEditingDraftId] = useState<number | null>(null);
-  const [editingDraftText, setEditingDraftText] = useState("");
-  const [signingOrderIds, setSigningOrderIds] = useState<Set<number>>(new Set());
-
-  const draftOrders = patientOrders.filter((o: any) => o.status === "draft");
-  const signedOrders = patientOrders.filter((o: any) => o.status !== "draft");
-
-  // Best-effort parse of a free-text order into the same structured shape the
-  // old form used to produce, so the Care Queue's due-time math and pharmacy
-  // stock deduction keep working without the doctor filling out any fields.
-  // Falls back to a plain nursing task (task_name = the raw text) whenever it
-  // can't confidently detect a medication -- always produces a valid shape.
-  const ROUTE_ALIASES: Record<string, string> = {
-    po: "Oral", oral: "Oral", sl: "Sublingual", sublingual: "Sublingual",
-    buccal: "Buccal", iv: "IV", im: "IM", sc: "Subcutaneous", subq: "Subcutaneous",
-    subcutaneous: "Subcutaneous", id: "Intradermal", intradermal: "Intradermal",
-    top: "Topical", topical: "Topical", td: "Transdermal", transdermal: "Transdermal",
-    inh: "Inhalation", inhalation: "Inhalation", nasal: "Nasal", pr: "Rectal",
-    rectal: "Rectal", pv: "Vaginal", vaginal: "Vaginal", ophthalmic: "Ophthalmic",
-    otic: "Otic", ng: "NG Tube",
-  };
-
-  const parseFreeTextOrder = (rawInput: string, inventory: any[]) => {
-    const text = rawInput.trim();
-    const lower = text.toLowerCase();
-
-    let route: string | null = null;
-    for (const [alias, full] of Object.entries(ROUTE_ALIASES)) {
-      if (new RegExp(`\\b${alias}\\b`, "i").test(text)) { route = full; break; }
-    }
-
-    let frequency_hours = 24; // one-time-like placeholder until a pattern is found
-    let total_occurrences: number | null = null;
-    const qhMatch = lower.match(/\bq(\d{1,2})h\b/) || lower.match(/every\s+(\d{1,2})\s*(?:hours|hrs|h)\b/);
-    if (qhMatch) {
-      frequency_hours = parseInt(qhMatch[1], 10);
-    } else if (/\b(bid|twice\s+daily|twice\s+a\s+day)\b/.test(lower)) {
-      frequency_hours = 12;
-    } else if (/\b(tid|three\s+times\s+daily)\b/.test(lower)) {
-      frequency_hours = 8;
-    } else if (/\b(qid|four\s+times\s+daily)\b/.test(lower)) {
-      frequency_hours = 6;
-    } else if (/\b(qd|once\s+daily|once\s+a\s+day|daily)\b/.test(lower)) {
-      frequency_hours = 24;
-    }
-    const occMatch = lower.match(/\bx\s*(\d{1,3})\b/) || lower.match(/for\s+(\d{1,3})\s+doses/);
-    if (occMatch) total_occurrences = parseInt(occMatch[1], 10);
-
-    let inventory_id: number | null = null;
-    let matchedName: string | null = null;
-    for (const inv of inventory) {
-      if (inv.drug_name && lower.includes(String(inv.drug_name).toLowerCase())) {
-        inventory_id = inv.id;
-        matchedName = inv.drug_name;
-        break;
-      }
-    }
-
-    const doseMatch = text.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g|ml|tab(?:let)?s?|cap(?:sule)?s?|unit(?:s)?|puff(?:s)?|drop(?:s)?)\b/i);
-    const looksLikeMedication = !!(inventory_id || doseMatch || /\b(tab|tablet|capsule|mg|ml|injection|syrup)\b/i.test(lower));
-
-    if (looksLikeMedication) {
-      return {
-        order_type: "medication" as const,
-        inventory_id,
-        custom_drug_name: inventory_id ? null : (matchedName || text),
-        dose_quantity: doseMatch ? parseFloat(doseMatch[1]) : 1,
-        route,
-        task_name: null,
-        instructions: text,
-        frequency_hours,
-        total_occurrences,
-      };
-    }
-    return {
-      order_type: "task" as const,
-      inventory_id: null,
-      custom_drug_name: null,
-      dose_quantity: null,
-      route: null,
-      task_name: text.slice(0, 200),
-      instructions: null,
-      frequency_hours,
-      total_occurrences,
-    };
-  };
-
-  // Builds a readable fallback string for orders that predate this feature
-  // (no raw_order_text saved), so "Renew" always has sensible text to prefill.
-  const reconstructOrderText = (order: any): string => {
-    if (order.raw_order_text) return order.raw_order_text;
-    const freqPart = order.total_occurrences === 1 ? "one-time" : `every ${order.frequency_hours}h${order.total_occurrences ? ` x${order.total_occurrences}` : ""}`;
-    if (order.order_type === "medication") {
-      const name = order.pharmacy_inventory?.drug_name || order.custom_drug_name || "medication";
-      return `${name} ${order.dose_quantity || ""} ${order.route || ""} ${freqPart} ${order.instructions || ""}`.replace(/\s+/g, " ").trim();
-    }
-    return `${order.task_name || "task"} ${freqPart} ${order.instructions || ""}`.replace(/\s+/g, " ").trim();
-  };
-
-  const handleQuickOrderSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedPatient || !quickOrderText.trim() || isSubmittingQuickOrder) return;
-    const patientMrn = parseInt(String(selectedPatient.mrn || selectedPatient.id), 10);
-    if (!patientMrn) { setOrderError("Could not resolve this patient's MRN."); return; }
-
-    setIsSubmittingQuickOrder(true);
-    setOrderError(null);
-    const raw = quickOrderText.trim();
-    const parsed = parseFreeTextOrder(raw, orderInventory);
-    try {
-      const { error } = await supabase.from("patient_orders").insert({
-        patient_mrn: patientMrn,
-        ordered_by: currentUser?.id || null,
-        status: "draft",
-        raw_order_text: raw,
-        ...parsed,
-      });
-      if (error) throw new Error(error.message);
-      setQuickOrderText("");
-      fetchPatientOrders(patientMrn);
-    } catch (err: any) {
-      setOrderError(err.message || "Could not capture this order.");
-    } finally {
-      setIsSubmittingQuickOrder(false);
-      // Keep typing without having to re-click the box -- the input briefly
-      // loses focus while disabled mid-submit, so grab it back explicitly.
-      requestAnimationFrame(() => quickOrderInputRef.current?.focus());
-    }
-  };
-
-  const handleStartEditDraft = (order: any) => {
-    setEditingDraftId(order.id);
-    setEditingDraftText(order.raw_order_text || reconstructOrderText(order));
-  };
-
-  const handleSaveEditDraft = async (orderId: number) => {
-    if (!editingDraftText.trim() || !selectedPatient) { setEditingDraftId(null); return; }
-    const raw = editingDraftText.trim();
-    const parsed = parseFreeTextOrder(raw, orderInventory);
-    try {
-      const { error } = await supabase.from("patient_orders").update({ raw_order_text: raw, ...parsed }).eq("id", orderId);
-      if (error) throw new Error(error.message);
-      setEditingDraftId(null);
-      fetchPatientOrders(selectedPatient.mrn || selectedPatient.id);
-    } catch (err: any) {
-      triggerToast(`Could not update draft: ${err.message}`);
-    }
-  };
-
-  const handleSignOrders = async (orderIds: number[]) => {
-    if (orderIds.length === 0 || !selectedPatient) return;
-    setSigningOrderIds((prev) => new Set([...prev, ...orderIds]));
-    try {
-      const nowIso = new Date().toISOString();
-      const { error } = await supabase
-        .from("patient_orders")
-        .update({ status: "active", signed_at: nowIso, signed_by: currentUser?.id || null, start_at: nowIso })
-        .in("id", orderIds);
-      if (error) throw new Error(error.message);
-      triggerToast(orderIds.length > 1 ? `${orderIds.length} orders signed.` : "Order signed.");
-      fetchPatientOrders(selectedPatient.mrn || selectedPatient.id);
-    } catch (err: any) {
-      triggerToast(`Could not sign order(s): ${err.message}`);
-    } finally {
-      setSigningOrderIds((prev) => {
-        const next = new Set(prev);
-        orderIds.forEach((id) => next.delete(id));
-        return next;
-      });
-    }
-  };
-
-  // Prefills the compose box from an existing (signed/discontinued) order so
-  // the doctor can quickly renew or tweak it -- review, then hit Enter.
-  const handleRenewOrder = (order: any) => {
-    setQuickOrderText(reconstructOrderText(order));
-  };
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"chart_review" | "synopsis" | "assessment" | "plan" | "medications" | "contact_log">("chart_review");
 
   // Current Medications List -- doctor's own med-rec reference list of what
   // the patient is currently taking. Deliberately separate from the
@@ -809,17 +487,17 @@ export default function PatientsDirectory({
   const [patientMedications, setPatientMedications] = useState<any[]>([]);
   const [isMedsLoading, setIsMedsLoading] = useState(false);
   const [isAddingMedication, setIsAddingMedication] = useState(false);
-  const [editingMedId, setEditingMedId] = useState<number | null>(null);
+  const [editingMedId, setEditingMedId] = useState<string | null>(null);
   const [medForm, setMedForm] = useState({ drug_name: "", note: "" });
   const [medError, setMedError] = useState<string | null>(null);
 
-  const fetchPatientMedications = async (patientMrn: number | string) => {
+  const fetchPatientMedications = async (patientId: string) => {
     setIsMedsLoading(true);
     try {
       const { data, error } = await supabase
         .from("patient_medications")
-        .select("*, profiles!created_by(full_name)")
-        .eq("patient_mrn", patientMrn)
+        .select("*, staff!created_by(full_name)")
+        .eq("patient_id", patientId)
         .order("created_at", { ascending: false });
       if (error) throw error;
       setPatientMedications(data || []);
@@ -838,9 +516,6 @@ export default function PatientsDirectory({
     setMedError(null);
     if (!medForm.drug_name.trim()) { setMedError("Enter a drug name."); return; }
 
-    const patientMrn = parseInt(String(selectedPatient.mrn || selectedPatient.id), 10);
-    if (!patientMrn) { setMedError("Could not resolve this patient's MRN."); return; }
-
     try {
       if (editingMedId) {
         const { error } = await supabase
@@ -851,10 +526,10 @@ export default function PatientsDirectory({
         triggerToast("Medication updated.");
       } else {
         const { error } = await supabase.from("patient_medications").insert({
-          patient_mrn: patientMrn,
+          patient_id: selectedPatient.id,
           drug_name: medForm.drug_name.trim(),
           note: medForm.note.trim() || null,
-          created_by: currentUser?.id || null,
+          created_by: currentUser?.staffId || null,
         });
         if (error) throw new Error(error.message);
         triggerToast("Medication added to current list.");
@@ -862,7 +537,7 @@ export default function PatientsDirectory({
       resetMedForm();
       setEditingMedId(null);
       setIsAddingMedication(false);
-      fetchPatientMedications(patientMrn);
+      fetchPatientMedications(selectedPatient.id);
     } catch (err: any) {
       setMedError(err.message || "Could not save this medication.");
     }
@@ -882,28 +557,24 @@ export default function PatientsDirectory({
     setMedError(null);
   };
 
-  const handleDeleteMedication = async (medId: number) => {
+  const handleDeleteMedication = async (medId: string) => {
     if (!confirm("Remove this medication from the patient's current list?")) return;
     try {
       const { error } = await supabase.from("patient_medications").delete().eq("id", medId);
       if (error) throw new Error(error.message);
       triggerToast("Medication removed.");
-      if (selectedPatient) fetchPatientMedications(selectedPatient.mrn || selectedPatient.id);
+      if (selectedPatient) fetchPatientMedications(selectedPatient.id);
     } catch (err: any) {
       triggerToast(`Could not remove medication: ${err.message}`);
     }
   };
 
   useEffect(() => {
-    if (activeWorkspaceTab === "orders" && selectedPatient) {
-      fetchPatientOrders(selectedPatient.mrn || selectedPatient.id);
-      fetchOrderInventory();
-    }
     if (activeWorkspaceTab === "medications" && selectedPatient) {
-      fetchPatientMedications(selectedPatient.mrn || selectedPatient.id);
+      fetchPatientMedications(selectedPatient.id);
     }
     if (activeWorkspaceTab === "contact_log" && selectedPatient) {
-      fetchContactLog(selectedPatient.mrn || selectedPatient.id);
+      fetchContactLog(selectedPatient.id);
     }
   }, [activeWorkspaceTab, selectedPatient]);
   const [chartReviewSubTab, setChartReviewSubTab] = useState<"encounters" | "notes" | "labs" | "lab_trends" | "all_labs" | "imaging" | "cardiology" | "procedures" | "surgeries" | "meds" | "note_template" | "media" | "photos">("notes");
@@ -942,13 +613,13 @@ export default function PatientsDirectory({
   const [clSaving, setClSaving] = useState(false);
   const [staffDirectory, setStaffDirectory] = useState<{ id: string; full_name: string; role: string }[]>([]);
 
-  const fetchContactLog = async (patientMrn: number | string) => {
+  const fetchContactLog = async (patientId: string) => {
     setIsContactLogLoading(true);
     try {
       const { data, error } = await supabase
         .from("patient_contact_log")
-        .select("*, profiles!logged_by(full_name), staff_notes(id, body, created_at, created_by)")
-        .eq("patient_mrn", patientMrn)
+        .select("*, staff!logged_by(full_name), staff_notes(id, body, created_at, created_by)")
+        .eq("patient_id", patientId)
         .order("occurred_at", { ascending: false });
       if (error) throw error;
       setContactLog(data || []);
@@ -971,9 +642,17 @@ export default function PatientsDirectory({
     setIsLoggingContact(true);
     if (staffDirectory.length === 0) {
       try {
-        const { data, error } = await supabase.from("profiles").select("id, full_name, role").order("full_name");
+        const { data, error } = await supabase
+          .from("staff")
+          .select("id, full_name, roles")
+          .eq("is_active", true)
+          .order("full_name");
         if (error) throw error;
-        setStaffDirectory(data || []);
+        setStaffDirectory((data || []).map((s: any) => ({
+          id: s.id,
+          full_name: s.full_name,
+          role: (s.roles || [])[0] || "staff",
+        })));
       } catch (err) {
         console.warn("Could not load staff directory for the recipient picker:", err);
       }
@@ -987,17 +666,14 @@ export default function PatientsDirectory({
     if (!clSummary.trim()) { setClError("Enter a short summary of what happened."); return; }
     if (clAttachNote && !clNoteBody.trim()) { setClError("Enter the note content, or turn off \"Attach a note\"."); return; }
 
-    const patientMrn = parseInt(String(selectedPatient.mrn || selectedPatient.id), 10);
-    if (!patientMrn) { setClError("Could not resolve this patient's MRN."); return; }
-
     setClSaving(true);
     try {
-      let staffNoteId: number | null = null;
+      let staffNoteId: string | null = null;
 
       if (clAttachNote) {
         const { data: noteData, error: noteErr } = await supabase
           .from("staff_notes")
-          .insert({ patient_mrn: patientMrn, body: clNoteBody.trim(), created_by: currentUser?.id || null })
+          .insert({ patient_id: selectedPatient.id, body: clNoteBody.trim(), created_by: currentUser?.staffId || null })
           .select()
           .single();
         if (noteErr) throw new Error(noteErr.message);
@@ -1014,18 +690,18 @@ export default function PatientsDirectory({
       }
 
       const { error: logErr } = await supabase.from("patient_contact_log").insert({
-        patient_mrn: patientMrn,
+        patient_id: selectedPatient.id,
         entry_type: clEntryType,
         actor: clActor,
         summary: clSummary.trim(),
         staff_note_id: staffNoteId,
-        logged_by: currentUser?.id || null,
+        logged_by: currentUser?.staffId || null,
       });
       if (logErr) throw new Error(logErr.message);
 
       triggerToast("Logged to Contact Log.");
       setIsLoggingContact(false);
-      fetchContactLog(patientMrn);
+      fetchContactLog(selectedPatient.id);
     } catch (err: any) {
       setClError(err.message || "Could not save this entry.");
     } finally {
@@ -1057,8 +733,6 @@ export default function PatientsDirectory({
   const [activeMyNote, setActiveMyNote] = useState<any | null>(null);
   // Note workspace panel opens only when a note is actually being written/edited
   const showNoteWorkspace = activeWorkspaceTab === "chart_review" && chartReviewSubTab === "notes" && !!activeMyNote;
-  // Order history right panel (Orders tab): which past order line is expanded
-  const [expandedHistoryOrderId, setExpandedHistoryOrderId] = useState<any>(null);
   const [expandedArchiveId, setExpandedArchiveId] = useState<string | null>(null);
   const [customTemplates, setCustomTemplates] = useState<{ id: string; title: string; category: string; content: string }[]>([]);
   const [customTests, setCustomTests] = useState<ClinicalTest[]>([]);
@@ -1528,13 +1202,6 @@ export default function PatientsDirectory({
       statusVal = abnormals.length > 2 ? "Danger" : "Warning";
     }
 
-    const patientMrn = selectedPatient.mrn || (isNaN(Number(selectedPatient.id)) ? null : Number(selectedPatient.id));
-    if (!patientMrn) {
-      setUploadError("This patient does not have a valid MRN required for relational clinical records.");
-      setIsSavingValidatedLab(false);
-      return;
-    }
-
     try {
       const savedComponents = [];
       for (const comp of validationComponents) {
@@ -1564,11 +1231,11 @@ export default function PatientsDirectory({
 
         // 2. Insert result into patient_lab_results
         const labResultPayload: any = {
-          patient_mrn: patientMrn,
+          patient_id: selectedPatient.id,
           parameter_id: parameterId,
           result_value: comp.value,
           is_abnormal: comp.flag !== "NORMAL",
-          created_by: currentUser?.id || null,
+          created_by: currentUser?.staffId || null,
           created_at: validationReportDate ? new Date(validationReportDate).toISOString() : new Date().toISOString()
         };
 
@@ -2267,13 +1934,13 @@ export default function PatientsDirectory({
   // Load this doctor's own managed location list once, so the note editor's
   // location picker has something to show.
   useEffect(() => {
-    if (!currentUser?.id || currentUser.role !== "doctor") return;
+    if (!currentUser?.staffId || currentUser.role !== "doctor") return;
     (async () => {
       try {
         const { data, error } = await supabase
           .from("doctor_locations")
           .select("id, name")
-          .eq("doctor_id", currentUser.id)
+          .eq("doctor_id", currentUser.staffId)
           .eq("is_active", true)
           .order("sort_order");
         if (error) throw error;
@@ -2282,7 +1949,7 @@ export default function PatientsDirectory({
         setMyLocations([]);
       }
     })();
-  }, [currentUser?.id]);
+  }, [currentUser?.staffId]);
 
   // Fetch sub-data when selectedPatient changes
   useEffect(() => {
@@ -2305,19 +1972,6 @@ export default function PatientsDirectory({
           setPatientAppointments(appts);
         } else {
           setPatientAppointments([]);
-        }
-
-        // 1b. Active admission (bed/room/ward/floor) for the identity card
-        try {
-          const { data: adm } = await supabase
-            .from("admissions")
-            .select("*, beds(bed_label, ward_rooms(room_number, room_type, wards(name, hospital_floors(name))))")
-            .eq("patient_mrn", selectedMrn)
-            .in("status", ["requested", "admitted"])
-            .maybeSingle();
-          setActiveAdmission(adm || null);
-        } catch {
-          setActiveAdmission(null);
         }
 
         // 2. Fetch extracted medical records (linked by patient_mrn)
@@ -2351,13 +2005,12 @@ export default function PatientsDirectory({
 
         // 5. Fetch patient labs from Supabase with safe local mock fallback
         try {
-          const patientMrn = selectedPatient.mrn || (isNaN(Number(selectedPatient.id)) ? null : Number(selectedPatient.id));
-          if (patientMrn) {
+          {
             const res = await supabase
               .from("patient_lab_results")
               .select(`
                 id,
-                patient_mrn,
+                patient_id,
                 result_value,
                 is_abnormal,
                 created_at,
@@ -2370,7 +2023,7 @@ export default function PatientsDirectory({
                   reference_range
                 )
               `)
-              .eq("patient_mrn", patientMrn);
+              .eq("patient_id", selectedPatient.id);
             const resultsData: any[] | null = res.data;
             const resultsErr: any = res.error;
 
@@ -2449,8 +2102,6 @@ export default function PatientsDirectory({
             } else {
               setPatientLabs(getFallbackLabsForPatient(selectedPatient.name));
             }
-          } else {
-            setPatientLabs(getFallbackLabsForPatient(selectedPatient.name));
           }
         } catch (err) {
           console.warn("Could not query patient lab results table:", err);
@@ -2805,11 +2456,6 @@ export default function PatientsDirectory({
         setPatients(prev => [created, ...prev]);
         setSelectedPatient(created);
         setIsNewPatientModal(false);
-        if (admitMode) {
-          setAdmitMode(false);
-          setAdmitPatient(created);
-          setIsAdmitModal(true);
-        }
       } else {
         throw new Error("No data returned from insert operations.");
       }
@@ -3016,8 +2662,12 @@ export default function PatientsDirectory({
     setSchedForm({ date: new Date().toISOString().slice(0, 10), time: "09:00", duration: "1", doctorId: "" });
     setIsScheduleModal(true);
     try {
-      const { data } = await supabase.from("profiles").select("id, full_name").eq("role", "doctor");
-      setSchedDoctors(data || []);
+      const { data } = await supabase
+        .from("staff")
+        .select("id, full_name, roles")
+        .eq("is_active", true)
+        .order("full_name");
+      setSchedDoctors((data || []).filter((s: any) => (s.roles || []).includes("doctor")));
     } catch {
       setSchedDoctors([]);
     }
@@ -3045,74 +2695,6 @@ export default function PatientsDirectory({
       setSchedError(err.message || "Could not book the appointment.");
     } finally {
       setSchedSaving(false);
-    }
-  };
-
-  // ---- Admit Patient flow (find-or-register, then admission request) ----
-  const [isAdmitModal, setIsAdmitModal] = useState(false);
-  const [admitPatient, setAdmitPatient] = useState<Patient | null>(null);
-  const [admitSearch, setAdmitSearch] = useState("");
-  const [admitForm, setAdmitForm] = useState({ reason: "", specialty: "", attendingId: "", expectedDischarge: "" });
-  const [admitDoctors, setAdmitDoctors] = useState<any[]>([]);
-  const [admitSaving, setAdmitSaving] = useState(false);
-  const [admitError, setAdmitError] = useState<string | null>(null);
-  const [admitMode, setAdmitMode] = useState(false); // registration was opened from the Admit flow
-
-  const openAdmitModal = async () => {
-    setAdmitError(null);
-    setAdmitPatient(null);
-    setAdmitSearch("");
-    setAdmitForm({ reason: "", specialty: "", attendingId: "", expectedDischarge: "" });
-    setIsAdmitModal(true);
-    try {
-      const { data } = await supabase.from("profiles").select("id, full_name").eq("role", "doctor");
-      setAdmitDoctors(data || []);
-    } catch {
-      setAdmitDoctors([]);
-    }
-  };
-
-  const handleRequestAdmission = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!admitPatient) return;
-    if (!admitForm.reason.trim()) {
-      setAdmitError("Please enter the reason / admitting diagnosis.");
-      return;
-    }
-    let expected: string | null = null;
-    if (admitForm.expectedDischarge.trim()) {
-      const m = admitForm.expectedDischarge.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-      if (!m) {
-        setAdmitError("Expected discharge must be dd/mm/yyyy (or leave it empty).");
-        return;
-      }
-      expected = `${m[3]}-${m[2]}-${m[1]}`;
-    }
-    setAdmitSaving(true);
-    setAdmitError(null);
-    try {
-      const { error } = await supabase.from("admissions").insert([{
-        patient_mrn: Number(admitPatient.mrn ?? admitPatient.id),
-        status: "requested",
-        requested_by: currentUser?.id || null,
-        reason: admitForm.reason.trim(),
-        specialty: admitForm.specialty.trim() || null,
-        attending_doctor_id: admitForm.attendingId || null,
-        expected_discharge: expected
-      }]);
-      if (error) {
-        if (error.code === "23505" || (error.message || "").includes("one_active")) {
-          throw new Error(`${admitPatient.name} already has an active admission or request.`);
-        }
-        throw error;
-      }
-      setIsAdmitModal(false);
-      setSelectedPatient(admitPatient);
-      triggerToast(`Admission requested for ${admitPatient.name} — the admissions desk can now assign a bed.`);
-    } catch (err: any) {
-      setAdmitError(err.message || "Could not request the admission.");
-    } finally {
-      setAdmitSaving(false);
     }
   };
 
@@ -3193,7 +2775,7 @@ export default function PatientsDirectory({
                       <p className="text-[10px] text-slate-400 mt-0.5">Refine your search, or register a new chart:</p>
                       <button
                         type="button"
-                        onClick={() => { setIsSearchOpen(false); setAdmitMode(false); setIsNewPatientModal(true); }}
+                        onClick={() => { setIsSearchOpen(false); setIsNewPatientModal(true); }}
                         className="mt-2 bg-[var(--theme-accent)] hover:bg-teal-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition-all"
                       >
                         <UserPlus size={11} /> Register Patient
@@ -3298,32 +2880,6 @@ export default function PatientsDirectory({
                       </button>
                     </div>
 
-                    {/* ACTIVE ADMISSION / ROOM ASSIGNMENT */}
-                    {activeAdmission && (() => {
-                      const bed = (activeAdmission as any).beds;
-                      const room = bed?.ward_rooms;
-                      const ward = room?.wards;
-                      const floorName = ward?.hospital_floors?.name;
-                      const isAdmitted = activeAdmission.status === "admitted" && bed;
-                      return (
-                        <div className={`w-full mt-2 rounded-lg px-2.5 py-2 text-left border ${isAdmitted ? "bg-[#2a5178]/5 border-[#c2d5e7]" : "bg-amber-50 border-amber-200"}`}>
-                          <span className={`block text-[8px] font-black uppercase tracking-wider ${isAdmitted ? "text-[#2a5178]" : "text-amber-700"}`}>
-                            {isAdmitted ? "Inpatient — Admitted" : "Admission Requested"}
-                          </span>
-                          {isAdmitted ? (
-                            <strong className="text-[11px] text-slate-800 leading-snug block mt-0.5">
-                              {[floorName, ward?.name].filter(Boolean).join(" · ")}
-                              {room ? ` · Room ${room.room_number}` : ""} · Bed {bed.bed_label}
-                            </strong>
-                          ) : (
-                            <span className="text-[10px] text-amber-800 block mt-0.5">Awaiting bed assignment at the admissions desk</span>
-                          )}
-                          {activeAdmission.admitted_at && (
-                            <span className="text-[9px] text-slate-400 block mt-0.5">Since {new Date(activeAdmission.admitted_at).toLocaleString("en-GB")}</span>
-                          )}
-                        </div>
-                      );
-                    })()}
                   </div>
 
                   {/* CLINICAL ALERT & LAB PANEL TABS (Authentic Solid Badges) */}
@@ -3527,7 +3083,7 @@ export default function PatientsDirectory({
                 </div>
 
                 {/* COLUMN B: MAIN WORKSPACE CHART REVIEW / ACTIVE TAB CONTENT (Width 53% or 66.6% on lg depending on right panel) */}
-                <div className={`col-span-12 ${showNoteWorkspace || activeWorkspaceTab === "orders" ? "lg:col-span-5" : "lg:col-span-9"} bg-white border border-slate-300 rounded-lg flex flex-col overflow-hidden shadow-xs`}>
+                <div className={`col-span-12 ${showNoteWorkspace ? "lg:col-span-5" : "lg:col-span-9"} bg-white border border-slate-300 rounded-lg flex flex-col overflow-hidden shadow-xs`}>
 
                   {/* MAIN WORKSPACE SECTION TABS (horizontal, top of content area) */}
               <div className="bg-slate-100 border-b border-slate-200 px-3 py-2 flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-stretch">
@@ -3571,20 +3127,6 @@ export default function PatientsDirectory({
                     }`}
                   >
                     <ClipboardList size={12} /> Plan of Care
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveWorkspaceTab("orders")}
-                    className={`px-3 py-1.5 rounded text-[11px] font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
-                      activeWorkspaceTab === "orders"
-                        ? "bg-[var(--theme-accent)] text-white border-[var(--theme-accent)] shadow-xs"
-                        : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
-                    }`}
-                  >
-                    <Syringe size={12} /> Orders
-                    {patientOrders.filter(o => o.status === "active").length > 0 && (
-                      <span className="bg-white/25 px-1.5 rounded-full text-[9px]">{patientOrders.filter(o => o.status === "active").length}</span>
-                    )}
                   </button>
                   <button
                     type="button"
@@ -5749,244 +5291,12 @@ Question Responses: [${gad7Answers.join(", ")}]`;
                     </div>
                   )}
 
-                  {activeWorkspaceTab === "orders" && (
-                    <div className="flex-1 p-4 overflow-y-auto">
-                      <div className="flex items-center justify-between mb-3 border-b pb-2">
-                        <h4 className="text-xs font-bold text-[#2a5178] uppercase tracking-wider">Medication & Nursing Orders</h4>
-                        {SHOW_LEGACY_ORDER_FORM && (
-                          <button
-                            type="button"
-                            onClick={() => { setOrderError(null); setIsAddingOrder(v => !v); }}
-                            className="bg-[var(--theme-accent)] hover:bg-[var(--theme-accent-dark)] text-white font-bold px-2.5 py-1.5 rounded text-[10px] flex items-center gap-1 cursor-pointer"
-                          >
-                            <Plus size={11} /> {isAddingOrder ? "Cancel" : "New Order"}
-                          </button>
-                        )}
-                      </div>
-
-                      {SHOW_LEGACY_ORDER_FORM && isAddingOrder && (
-                        <form onSubmit={handleCreateOrder} className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-4 flex flex-col gap-2.5">
-                          {orderError && <div className="bg-red-50 border border-red-100 text-red-600 text-[10px] font-semibold px-2.5 py-1.5 rounded">{orderError}</div>}
-                          <div className="flex gap-2">
-                            <button type="button" onClick={() => setOrderForm({ ...orderForm, order_type: "medication" })} className={`flex-1 text-[10px] font-bold py-1.5 rounded border cursor-pointer ${orderForm.order_type === "medication" ? "bg-[var(--theme-accent)] text-white border-[var(--theme-accent)]" : "bg-white text-slate-600 border-slate-200"}`}>
-                              <Syringe size={11} className="inline mr-1" /> Medication
-                            </button>
-                            <button type="button" onClick={() => setOrderForm({ ...orderForm, order_type: "task" })} className={`flex-1 text-[10px] font-bold py-1.5 rounded border cursor-pointer ${orderForm.order_type === "task" ? "bg-[var(--theme-accent)] text-white border-[var(--theme-accent)]" : "bg-white text-slate-600 border-slate-200"}`}>
-                              <ClipboardList size={11} className="inline mr-1" /> Nursing Task
-                            </button>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <button type="button" onClick={() => setOrderForm({ ...orderForm, is_one_time: false })} className={`flex-1 text-[10px] font-bold py-1.5 rounded border cursor-pointer ${!orderForm.is_one_time ? "bg-slate-700 text-white border-slate-700" : "bg-white text-slate-600 border-slate-200"}`}>
-                              <RotateCw size={11} className="inline mr-1" /> Repeats
-                            </button>
-                            <button type="button" onClick={() => setOrderForm({ ...orderForm, is_one_time: true })} className={`flex-1 text-[10px] font-bold py-1.5 rounded border cursor-pointer ${orderForm.is_one_time ? "bg-slate-700 text-white border-slate-700" : "bg-white text-slate-600 border-slate-200"}`}>
-                              One-time
-                            </button>
-                          </div>
-
-                          {orderForm.order_type === "medication" ? (
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="col-span-2">
-                                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Drug</label>
-                                <input
-                                  required
-                                  type="text"
-                                  list="order-drug-options"
-                                  placeholder="Type a drug name or pick from the list..."
-                                  value={orderForm.drug_input}
-                                  onChange={(e) => setOrderForm({ ...orderForm, drug_input: e.target.value })}
-                                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg"
-                                />
-                                <datalist id="order-drug-options">
-                                  {orderInventory.map((i: any) => <option key={i.id} value={getDrugLabel(i)} />)}
-                                </datalist>
-                                <p className="text-[9px] text-slate-400 mt-1">Pick a drug from the pharmacy catalog, or type one that isn't stocked here.</p>
-                              </div>
-                              <div>
-                                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Dose (qty per administration)</label>
-                                <input required type="number" min="0" step="0.5" value={orderForm.dose_quantity} onChange={(e) => setOrderForm({ ...orderForm, dose_quantity: e.target.value })} className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg" />
-                              </div>
-                              <div>
-                                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Route</label>
-                                <select value={orderForm.route} onChange={(e) => setOrderForm({ ...orderForm, route: e.target.value })} className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg">
-                                  <option value="">Select route...</option>
-                                  {MEDICATION_ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
-                                </select>
-                              </div>
-                              {!orderForm.is_one_time && (
-                                <div>
-                                  <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Every (hours)</label>
-                                  <input required type="number" min="0.5" step="0.5" value={orderForm.frequency_hours} onChange={(e) => setOrderForm({ ...orderForm, frequency_hours: e.target.value })} className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg" />
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="col-span-2">
-                                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Task Name</label>
-                                <input required type="text" placeholder="e.g. Vitals Check, Wound Dressing" value={orderForm.task_name} onChange={(e) => setOrderForm({ ...orderForm, task_name: e.target.value })} className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg" />
-                              </div>
-                              {!orderForm.is_one_time && (
-                                <>
-                                  <div>
-                                    <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Every (hours)</label>
-                                    <input required type="number" min="0.5" step="0.5" value={orderForm.frequency_hours} onChange={(e) => setOrderForm({ ...orderForm, frequency_hours: e.target.value })} className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg" />
-                                  </div>
-                                  <div>
-                                    <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Total Occurrences (optional)</label>
-                                    <input type="number" min="1" placeholder="Ongoing" value={orderForm.total_occurrences} onChange={(e) => setOrderForm({ ...orderForm, total_occurrences: e.target.value })} className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg" />
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          )}
-
-                          {orderForm.is_one_time ? (
-                            <p className="text-[9.5px] text-slate-500 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
-                              This order is given once. It will drop off the nurse's queue automatically after it's completed.
-                            </p>
-                          ) : orderForm.order_type === "medication" && (
-                            <div>
-                              <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Total Occurrences (optional)</label>
-                              <input type="number" min="1" placeholder="Ongoing until discontinued" value={orderForm.total_occurrences} onChange={(e) => setOrderForm({ ...orderForm, total_occurrences: e.target.value })} className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg" />
-                            </div>
-                          )}
-
-                          <div>
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Instructions (optional)</label>
-                            <input type="text" placeholder="e.g. Give with food; hold if BP < 100/60" value={orderForm.instructions} onChange={(e) => setOrderForm({ ...orderForm, instructions: e.target.value })} className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg" />
-                          </div>
-
-                          <button type="submit" className="bg-[var(--theme-accent)] hover:bg-[var(--theme-accent-dark)] text-white font-bold px-3 py-1.5 rounded text-[10px] self-start cursor-pointer">
-                            Place Order
-                          </button>
-                        </form>
-                      )}
-
-                      {SHOW_LEGACY_ORDER_FORM && !isAddingOrder && (
-                        <p className="text-[11px] text-slate-400 text-center py-6">
-                          All orders for this patient are listed in the <strong className="text-slate-500">Order History</strong> panel on the right. Click <strong className="text-slate-500">New Order</strong> to place one.
-                        </p>
-                      )}
-
-                      {/* Free-text quick order entry -- type an order, press Enter, it lands
-                          below as a draft. Nothing here is visible to nursing/pharmacy until
-                          it's signed. */}
-                      <form onSubmit={handleQuickOrderSubmit} className="flex flex-col gap-1.5 mb-4">
-                        {orderError && <div className="bg-red-50 border border-red-100 text-red-600 text-[10px] font-semibold px-2.5 py-1.5 rounded">{orderError}</div>}
-                        <div className="flex gap-2 items-center">
-                          <input
-                            ref={quickOrderInputRef}
-                            type="text"
-                            autoFocus
-                            value={quickOrderText}
-                            onChange={(e) => setQuickOrderText(e.target.value)}
-                            placeholder='Type an order and press Enter... e.g. "Paracetamol 500mg PO q8h x5" or "Vitals check every 4h"'
-                            className="flex-1 px-3 py-2 text-xs border border-slate-200 rounded-lg"
-                          />
-                          <button
-                            type="submit"
-                            disabled={!quickOrderText.trim() || isSubmittingQuickOrder}
-                            className="bg-[var(--theme-accent)] hover:bg-[var(--theme-accent-dark)] disabled:opacity-40 text-white font-bold px-3 py-2 rounded text-[10px] flex items-center gap-1 cursor-pointer shrink-0"
-                          >
-                            <Plus size={11} /> Add
-                          </button>
-                        </div>
-                        <p className="text-[9.5px] text-slate-400">
-                          Write freely -- drug, dose, route, and frequency are picked up automatically where possible. Each order stays a <strong className="text-slate-500">draft</strong> below until you sign it.
-                        </p>
-                      </form>
-
-                      <div className="mb-2 flex items-center justify-between">
-                        <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                          Drafts{draftOrders.length > 0 && ` (${draftOrders.length})`}
-                        </h5>
-                        {draftOrders.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleSignOrders(draftOrders.map((o: any) => o.id))}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded text-[10px] flex items-center gap-1 cursor-pointer"
-                          >
-                            <Check size={11} /> Sign All ({draftOrders.length})
-                          </button>
-                        )}
-                      </div>
-
-                      {draftOrders.length === 0 ? (
-                        <p className="text-[11px] text-slate-400 text-center py-4 border border-dashed border-slate-200 rounded-lg mb-4">
-                          No drafts yet -- type an order above and press Enter.
-                        </p>
-                      ) : (
-                        <div className="flex flex-col gap-2 mb-4">
-                          {draftOrders.map((order: any) => {
-                            const isSigning = signingOrderIds.has(order.id);
-                            return (
-                              <div key={order.id} className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
-                                {editingDraftId === order.id ? (
-                                  <div className="flex gap-2 items-center">
-                                    <input
-                                      type="text"
-                                      autoFocus
-                                      value={editingDraftText}
-                                      onChange={(e) => setEditingDraftText(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") { e.preventDefault(); handleSaveEditDraft(order.id); }
-                                        if (e.key === "Escape") setEditingDraftId(null);
-                                      }}
-                                      className="flex-1 px-2 py-1 text-xs border border-slate-200 rounded"
-                                    />
-                                    <button type="button" onClick={() => handleSaveEditDraft(order.id)} className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 cursor-pointer">Save</button>
-                                    <button type="button" onClick={() => setEditingDraftId(null)} className="text-[10px] font-bold text-slate-400 hover:text-slate-600 cursor-pointer">Cancel</button>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="flex-1 cursor-pointer" onClick={() => handleStartEditDraft(order)}>
-                                      <p className="text-xs text-slate-700">{order.raw_order_text}</p>
-                                      <p className="text-[9px] text-slate-400 mt-0.5">
-                                        {order.order_type === "medication" ? (
-                                          <><Syringe size={9} className="inline mr-0.5" /> Medication</>
-                                        ) : (
-                                          <><ClipboardList size={9} className="inline mr-0.5" /> Task</>
-                                        )}
-                                        {order.route && ` · ${order.route}`}
-                                        {order.total_occurrences === 1 ? " · one-time" : ` · every ${order.frequency_hours}h`}
-                                        {" · click to edit"}
-                                      </p>
-                                    </div>
-                                    <div className="flex gap-1 items-center shrink-0">
-                                      <button
-                                        type="button"
-                                        disabled={isSigning}
-                                        onClick={() => handleSignOrders([order.id])}
-                                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold px-2 py-1 rounded text-[10px] flex items-center gap-1 cursor-pointer"
-                                      >
-                                        <Check size={10} /> Sign
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDiscontinueOrder(order.id)}
-                                        className="text-[10px] font-bold text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-2 py-1 cursor-pointer"
-                                      >
-                                        Discard
-                                      </button>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
                   {activeWorkspaceTab === "medications" && (
                     <div className="flex-1 p-4 overflow-y-auto">
                       <div className="flex items-center justify-between mb-3 border-b pb-2">
                         <div>
                           <h4 className="text-xs font-bold text-[#2a5178] uppercase tracking-wider">Current Medications</h4>
-                          <p className="text-[10px] text-slate-400 mt-0.5">What the patient is currently taking. Separate from standing Orders / nurse Care Queue.</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">What the patient is currently taking, as a reference list.</p>
                         </div>
                         <button
                           type="button"
@@ -6047,7 +5357,7 @@ Question Responses: [${gad7Answers.join(", ")}]`;
                                 <div>
                                   <div className="text-xs font-bold text-slate-700">{med.drug_name}</div>
                                   {med.note && <div className="text-[10px] text-slate-500 mt-0.5">{med.note}</div>}
-                                  <div className="text-[9px] text-slate-400 mt-1">Added by {med.profiles?.full_name || "Unknown"} · {new Date(med.created_at).toLocaleDateString("en-GB")}</div>
+                                  <div className="text-[9px] text-slate-400 mt-1">Added by {med.staff?.full_name || "Unknown"} · {new Date(med.created_at).toLocaleDateString("en-GB")}</div>
                                 </div>
                               </div>
                               <div className="flex items-center gap-1 shrink-0">
@@ -6146,10 +5456,12 @@ Question Responses: [${gad7Answers.join(", ")}]`;
                                   <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Also route to role (optional)</label>
                                   <select value={clRecipientRole} onChange={(e) => setClRecipientRole(e.target.value)} className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white">
                                     <option value="">-- none --</option>
-                                    <option value="secretary">Secretary</option>
-                                    <option value="admissions">Admissions</option>
-                                    <option value="hr">HR</option>
-                                    <option value="pharmacy">Pharmacy</option>
+                                    <option value="doctor">Doctor</option>
+                                    <option value="nurse">Nurse</option>
+                                    <option value="receptionist">Receptionist</option>
+                                    <option value="accountant">Accountant</option>
+                                    <option value="lab_tech">Lab Tech</option>
+                                    <option value="admin">Admin</option>
                                   </select>
                                 </div>
                                 <div>
@@ -6206,7 +5518,7 @@ Question Responses: [${gad7Answers.join(", ")}]`;
                                     )
                                   )}
                                   <div className="text-[9px] text-slate-400 mt-1">
-                                    {entry.profiles?.full_name || "Unknown"} &bull; {new Date(entry.occurred_at).toLocaleString("en-GB")}
+                                    {entry.staff?.full_name || "Unknown"} &bull; {new Date(entry.occurred_at).toLocaleString("en-GB")}
                                   </div>
                                 </div>
                               </div>
@@ -6777,102 +6089,6 @@ Question Responses: [${gad7Answers.join(", ")}]`;
                 </div>
                 )}
 
-                {/* ORDER HISTORY PANEL: every order as a one-line row, click to expand */}
-                {activeWorkspaceTab === "orders" && (
-                  <div className="col-span-12 lg:col-span-4 bg-white border border-slate-300 rounded-lg flex flex-col overflow-hidden shadow-xs">
-                    <div className="bg-slate-100 border-b flex items-center justify-between px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider shrink-0">
-                      <span className="text-[#2a5178] flex items-center gap-1">
-                        <Clock size={11} /> Order History
-                      </span>
-                      <span className="text-slate-400 normal-case">{signedOrders.filter((o: any) => o.status === "active").length} active · {signedOrders.filter((o: any) => o.status !== "active").length} past</span>
-                    </div>
-                    <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-                      {signedOrders.length === 0 ? (
-                        <div className="p-6 text-center text-slate-400 text-[11px]">
-                          <p className="font-semibold">No signed orders yet</p>
-                          <p className="text-[10px] mt-0.5">Sign a draft on the left and it'll appear here.</p>
-                        </div>
-                      ) : (
-                        // Newest first, by when the order was originally written -- not
-                        // when it was signed, so a "Sign All" of several drafts still
-                        // lists them in the order the doctor actually typed them.
-                        [...signedOrders].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((order: any) => {
-                          const isExpanded = expandedHistoryOrderId === order.id;
-                          const doneCount = (order.patient_order_administrations || []).filter((a: any) => a.status === "done").length;
-                          const lastAdmin = (order.patient_order_administrations || []).slice().sort((a: any, b: any) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime())[0];
-                          // Prefer showing exactly what the doctor typed; fall back to the old
-                          // structured title for orders placed before free-text entry existed.
-                          const title = order.raw_order_text || (order.order_type === "medication"
-                            ? `${order.pharmacy_inventory?.drug_name || order.custom_drug_name || "Drug"}${order.dose_quantity ? ` — ${order.dose_quantity} ${order.pharmacy_inventory?.unit || "unit"}` : ""}`
-                            : order.task_name);
-                          let followUpBadge: { label: string; className: string } | null = null;
-                          if (order.status === "active") {
-                            const nextDue = computeOrderNextDue(order);
-                            const overdue = nextDue.getTime() < new Date().getTime();
-                            if (doneCount === 0) {
-                              followUpBadge = overdue
-                                ? { label: "Awaiting first dose — overdue", className: "bg-red-100 text-red-600" }
-                                : { label: "Awaiting first dose", className: "bg-amber-100 text-amber-700" };
-                            } else {
-                              followUpBadge = overdue
-                                ? { label: "Nurse action overdue", className: "bg-red-100 text-red-600" }
-                                : { label: "Confirmed by nurse", className: "bg-emerald-100 text-emerald-700" };
-                            }
-                          }
-                          return (
-                            <div key={order.id} className={order.status === "active" ? "" : "opacity-70"}>
-                              <button
-                                type="button"
-                                onClick={() => setExpandedHistoryOrderId(isExpanded ? null : order.id)}
-                                className="w-full text-left px-3 py-2 hover:bg-slate-50 cursor-pointer transition-colors"
-                              >
-                                <div className="flex items-center gap-2">
-                                  {order.order_type === "medication" ? <Syringe size={11} className="text-[var(--theme-accent)] shrink-0" /> : <ClipboardList size={11} className="text-[var(--theme-accent)] shrink-0" />}
-                                  <span className={`text-[11px] font-bold text-slate-700 flex-1 ${isExpanded ? "whitespace-normal break-words" : "truncate"}`}>{title}</span>
-                                  <ChevronRight size={12} className={`text-slate-300 shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                                </div>
-                              </button>
-                              {isExpanded && (
-                                <div className="px-3 pb-2.5 pt-1 text-[10px] text-slate-500 flex flex-col gap-1 bg-slate-50/70 animate-in slide-in-from-top-1 duration-150">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full ${order.status === "active" ? "bg-emerald-100 text-emerald-700" : order.status === "completed" ? "bg-slate-200 text-slate-500" : "bg-red-100 text-red-500"}`}>{order.status}</span>
-                                    {followUpBadge && <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full ${followUpBadge.className}`}>{followUpBadge.label}</span>}
-                                    {order.route && <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700">{order.route}</span>}
-                                  </div>
-                                  <div><strong className="text-slate-600">Type:</strong> {order.order_type === "medication" ? "Medication" : "Nursing Task"}</div>
-                                  {order.order_type === "medication" && !order.pharmacy_inventory && order.custom_drug_name && (
-                                    <div><span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Not stocked</span></div>
-                                  )}
-                                  <div><strong className="text-slate-600">Schedule:</strong> {order.total_occurrences === 1 ? "One-time order" : `Every ${order.frequency_hours}h`}{order.total_occurrences ? ` · ${doneCount}/${order.total_occurrences} given` : ` · ${doneCount} given so far`}</div>
-                                  <div><strong className="text-slate-600">Ordered by:</strong> {order.profiles?.full_name || "Unknown"}</div>
-                                  {order.signed_at && <div><strong className="text-slate-600">Signed:</strong> {new Date(order.signed_at).toLocaleString("en-GB")}</div>}
-                                  {order.created_at && <div><strong className="text-slate-600">Placed:</strong> {new Date(order.created_at).toLocaleString("en-GB")}</div>}
-                                  {order.instructions && <div><strong className="text-slate-600">Instructions:</strong> <span className="italic">{order.instructions}</span></div>}
-                                  {lastAdmin && (
-                                    <div className="bg-white border border-slate-100 rounded px-1.5 py-1 mt-0.5">
-                                      Last given: {new Date(lastAdmin.completed_at).toLocaleString("en-GB")} by {lastAdmin.profiles?.full_name || "Unknown nurse"} — {lastAdmin.recorded_value || "No value recorded"}
-                                    </div>
-                                  )}
-                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                    <button type="button" onClick={() => handleRenewOrder(order)} className="self-start text-[10px] font-bold text-[var(--theme-accent-dark)] hover:opacity-80 border border-[var(--theme-accent)] rounded px-2 py-1 flex items-center gap-1 cursor-pointer transition-colors">
-                                      <RotateCw size={11} /> Renew / Change
-                                    </button>
-                                    {order.status === "active" && (
-                                      <button type="button" onClick={() => handleDiscontinueOrder(order.id)} className="self-start text-[10px] font-bold text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 rounded px-2 py-1 flex items-center gap-1 cursor-pointer transition-colors">
-                                        <Ban size={11} /> Discontinue Order
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                )}
-
               </div>
 
               {/* UNIVERSAL BOTTOM ACTION BAR */}
@@ -6978,138 +6194,6 @@ Question Responses: [${gad7Answers.join(", ")}]`;
           </div>
         </div>
       </div>
-
-      {/* ADMIT PATIENT MODAL: find-or-register, then admission request */}
-      {isAdmitModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999] overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-2xl border w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-8">
-            <div className="px-5 py-4 border-b bg-slate-50 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <UserPlus className="h-4 w-4 text-[var(--theme-accent)]" />
-                <span className="font-bold text-xs text-slate-800 uppercase tracking-wide">
-                  {admitPatient ? "Admission Request" : "Admit Patient — Find or Register"}
-                </span>
-              </div>
-              <button onClick={() => setIsAdmitModal(false)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
-            </div>
-
-            {!admitPatient ? (
-              <div className="p-5 flex flex-col gap-3 text-xs">
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search by name, MRN, or phone..."
-                    value={admitSearch}
-                    onChange={e => setAdmitSearch(e.target.value)}
-                    autoFocus
-                    className="w-full pl-8.5 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
-                  />
-                </div>
-                <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
-                  {(() => {
-                    const q = admitSearch.trim().toLowerCase();
-                    const qDigits = q.replace(/\D/g, "").replace(/^0+/, "");
-                    const matches = patients.filter(p => {
-                      if (!q) return true;
-                      if (nameMatchesQuery(p.name, q)) return true;
-                      if (p.mrn !== undefined && String(p.mrn).includes(q)) return true;
-                      if (qDigits && p.phone && p.phone.replace(/\D/g, "").replace(/^0+/, "").includes(qDigits)) return true;
-                      return false;
-                    }).slice(0, 8);
-                    if (matches.length === 0) {
-                      return <div className="p-4 text-center text-slate-400 text-[11px]">No matching patient.</div>;
-                    }
-                    return matches.map(p => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => { setAdmitError(null); setAdmitPatient(p); }}
-                        className="w-full text-left p-2.5 hover:bg-slate-50 flex items-center justify-between gap-2 cursor-pointer"
-                      >
-                        <span className="font-bold text-[11px] text-slate-700 truncate">{p.name}</span>
-                        <span className="text-[10px] text-slate-400 font-mono shrink-0">{formatDateDDMMYYYY(p.birth_date)} · MRN {p.mrn ?? p.id}</span>
-                      </button>
-                    ));
-                  })()}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { setIsAdmitModal(false); setAdmitMode(true); setIsNewPatientModal(true); }}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-lg text-[11px] flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <UserPlus size={12} /> New Patient — register then admit
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleRequestAdmission} className="p-5 flex flex-col gap-3 text-xs">
-                <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-bold text-slate-800 text-[12px] truncate">{admitPatient.name}</div>
-                    <div className="text-[10px] text-slate-400 font-mono">{formatDateDDMMYYYY(admitPatient.birth_date)} · MRN {admitPatient.mrn ?? admitPatient.id}</div>
-                  </div>
-                  <button type="button" onClick={() => setAdmitPatient(null)} className="text-[10px] font-bold text-[var(--theme-accent)] cursor-pointer shrink-0">Change</button>
-                </div>
-
-                {admitError && <div className="bg-red-50 border border-red-100 text-red-600 text-[10px] font-semibold px-2.5 py-1.5 rounded">{admitError}</div>}
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Reason / Admitting Diagnosis</label>
-                  <textarea
-                    rows={2}
-                    required
-                    placeholder="e.g. Hip fracture rehabilitation, post-op care..."
-                    value={admitForm.reason}
-                    onChange={e => setAdmitForm({ ...admitForm, reason: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 focus:outline-none focus:bg-white focus:ring-1 focus:ring-teal-500"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Specialty / Service</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Internal Medicine"
-                      value={admitForm.specialty}
-                      onChange={e => setAdmitForm({ ...admitForm, specialty: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 focus:outline-none focus:bg-white focus:ring-1 focus:ring-teal-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Attending Doctor</label>
-                    <select
-                      value={admitForm.attendingId}
-                      onChange={e => setAdmitForm({ ...admitForm, attendingId: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 focus:outline-none focus:bg-white focus:ring-1 focus:ring-teal-500"
-                    >
-                      <option value="">Unassigned</option>
-                      {admitDoctors.map((d: any) => <option key={d.id} value={d.id}>{d.full_name}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Expected Discharge (optional)</label>
-                  <input
-                    type="text"
-                    placeholder="dd/mm/yyyy"
-                    maxLength={10}
-                    value={admitForm.expectedDischarge}
-                    onChange={e => { let v = e.target.value.replace(/[^\d]/g, "").slice(0, 8); if (v.length > 4) v = `${v.slice(0, 2)}/${v.slice(2, 4)}/${v.slice(4)}`; else if (v.length > 2) v = `${v.slice(0, 2)}/${v.slice(2)}`; setAdmitForm({ ...admitForm, expectedDischarge: v }); }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 focus:outline-none focus:bg-white focus:ring-1 focus:ring-teal-500"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={admitSaving}
-                  className="bg-[var(--theme-accent)] hover:bg-[var(--theme-accent-dark)] disabled:opacity-60 text-white font-bold px-4 py-2 rounded-lg text-xs self-start cursor-pointer flex items-center gap-1.5"
-                >
-                  <UserCheck size={12} /> {admitSaving ? "Requesting..." : "Request Admission"}
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* EDIT PATIENT PROFILE MODAL */}
       {isEditPatientModal && selectedPatient && (
@@ -7409,7 +6493,7 @@ Question Responses: [${gad7Answers.join(", ")}]`;
                             <button
                               key={p.id}
                               type="button"
-                              onClick={() => { setIsNewPatientModal(false); setAdmitMode(false); setSelectedPatient(p); }}
+                              onClick={() => { setIsNewPatientModal(false); setSelectedPatient(p); }}
                               className="text-left bg-white border border-amber-100 hover:border-amber-400 rounded px-2 py-1.5 text-[11px] flex items-center justify-between gap-2 cursor-pointer transition-colors"
                             >
                               <span className="font-bold text-slate-700 truncate">{p.name}</span>
