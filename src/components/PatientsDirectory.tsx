@@ -2651,39 +2651,50 @@ export default function PatientsDirectory({
       return parseInt(`${prefix1}${prefix2}${randomDigits}`, 10);
     };
 
-    const mrnValue = generateNumericMRN(firstName, surname);
-
     try {
-      // Single insert matching the real patients schema
-      // (mrn, first_name, surname, birth_date, gender, phone_number, email, address, history)
+      // Insert matching this app's actual patients schema
+      // (supabase/migrations/0003_patients.sql) -- not SIMA's column names.
+      // mrn is deliberately omitted: the database assigns it automatically
+      // (see 0010_mrn_format.sql), same plain-incrementing-number scheme
+      // as SIMA, instead of the client generating one itself.
       const payload = {
-        mrn: mrnValue,
         first_name: firstName,
+        last_name: surname,
         father_name: fatherName || null,
-        surname: surname,
-        birth_date: dobIso,
-        gender: newPatientGender,
-        phone_number: newPatientPhone.trim() || null,
-        email: newPatientEmail.trim() || null,
-        address: newPatientAddress.trim() || null,
         mother_name: toTitleCase(newPatientMotherName) || null,
+        gender: newPatientGender.toLowerCase(),
+        date_of_birth: dobIso,
         national_id: newPatientNationalId.trim() || null,
         nationality: toTitleCase(newPatientNationality) || null,
-        place_of_birth: toTitleCase(newPatientPlaceOfBirth) || null,
-        marital_status: newPatientMaritalStatus || null,
-        occupation: newPatientOccupation.trim() || null,
-        education_level: newPatientEducation || null,
-        emergency_contact_name: toTitleCase(newPatientEmergencyName) || null,
-        emergency_contact_relation: newPatientEmergencyRelation.trim() || null,
-        emergency_contact_phone: newPatientEmergencyPhone.trim() || null,
-        insurance_provider: newPatientInsuranceProvider.trim() || null,
-        insurance_number: newPatientInsuranceNumber.trim() || null,
-        blood_type: newPatientBloodType || null
+        phone: newPatientPhone.trim() || null,
+        email: newPatientEmail.trim() || null,
+        address_line: newPatientAddress.trim() || null,
+        blood_type: newPatientBloodType || null,
+        created_by: currentUser?.id || null,
+        // No home in this app's schema (a leaner model than SIMA's): place
+        // of birth, marital status, occupation, education level, emergency
+        // contact. Not sent -- unlike SIMA's table these columns don't
+        // exist here, and an unknown column fails the whole insert.
       };
       const res = await supabase.from("patients").insert([payload]).select();
 
       if (res.error) {
         throw res.error;
+      }
+
+      // Insurance lives in its own patient_payers table here, not on
+      // patients directly -- a second insert, only if either field is set.
+      if (res.data?.[0]?.id && (newPatientInsuranceProvider.trim() || newPatientInsuranceNumber.trim())) {
+        try {
+          await supabase.from("patient_payers").insert([{
+            patient_id: res.data[0].id,
+            payer_type: "private_insurance",
+            payer_name: newPatientInsuranceProvider.trim() || null,
+            policy_no: newPatientInsuranceNumber.trim() || null,
+          }]);
+        } catch (payerErr) {
+          console.warn("Could not save insurance info:", payerErr);
+        }
       }
 
       const resultData: any = res.data && res.data[0];
@@ -2694,7 +2705,7 @@ export default function PatientsDirectory({
         if (!name) {
           const first = resultData.first_name || "";
           const father = resultData.father_name || "";
-          const last = resultData.surname || "";
+          const last = resultData.surname || resultData.last_name || "";
           name = [first, father, last].filter(Boolean).join(" ").trim() || `Patient MRN-${resultData.id || resultData.mrn || ""}`;
         }
         name = toTitleCase(name);
@@ -2703,17 +2714,17 @@ export default function PatientsDirectory({
 
         const created: Patient = {
           id: String(resultData.id || resultData.mrn || ""),
-          mrn: resultData.mrn ? Number(resultData.mrn) : mrnValue,
+          mrn: resultData.mrn ? Number(resultData.mrn) : undefined,
           name,
           first_name: resultData.first_name || "",
           father_name: resultData.father_name || "",
-          surname: resultData.surname || "",
+          surname: resultData.surname || resultData.last_name || "",
           birth_date,
           gender: resultData.gender || "Female",
           phone,
           email: resultData.email || "",
           history: newPatientHistory.trim() || "None declared.",
-          address: resultData.address || "",
+          address: resultData.address || resultData.address_line || "",
           mother_name: resultData.mother_name || "",
           national_id: resultData.national_id || "",
           nationality: resultData.nationality || "",
@@ -2834,70 +2845,14 @@ export default function PatientsDirectory({
       setNewPatientWeight("");
       triggerToast("Patient registered successfully!");
     } catch (err: any) {
-      console.warn("Could not insert patient in database, fallback to simulated offline object:", err.message);
-
-      // Save local vitals for fallback if height or weight were entered
-      if (newPatientHeight.trim() || newPatientWeight.trim()) {
-        const localVital = {
-          id: `local-vital-${Date.now()}`,
-          patient_mrn: mrnValue,
-          patient_name: nameStr,
-          height: parseFloat(newPatientHeight.trim()) || 0,
-          weight: parseFloat(newPatientWeight.trim()) || 0,
-          blood_pressure: newPatientBp.trim() || "",
-          heart_rate: newPatientHr.trim() || "",
-          created_at: new Date().toISOString()
-        };
-        setPatientVitals([localVital]);
-      }
-
-      // Simulated fallback Patient object
-      const simulatedObj: Patient = {
-        id: String(mrnValue),
-        mrn: mrnValue,
-        name: nameStr,
-        birth_date: dobIso,
-        gender: newPatientGender,
-        phone: newPatientPhone.trim() || "+1 (555) 000-0000",
-        email: newPatientEmail.trim() || `${nameStr.toLowerCase().replace(/\s+/g, ".")}@example.com`,
-        history: newPatientHistory.trim() || "None declared.",
-        address: newPatientAddress.trim() || "None declared."
-      };
-
-      setPatients(prev => [simulatedObj, ...prev]);
-      setSelectedPatient(simulatedObj);
-      setIsNewPatientModal(false);
-
-      // Clear all inputs
-      setNewPatientFirstName("");
-      setNewPatientDob("");
-      setNewPatientFatherName("");
-      setNewPatientSurname("");
-      setNewPatientMotherName("");
-      setNewPatientNationalId("");
-      setNewPatientNationality("");
-      setNewPatientPlaceOfBirth("");
-      setNewPatientMaritalStatus("");
-      setNewPatientOccupation("");
-      setNewPatientEducation("");
-      setNewPatientEmergencyName("");
-      setNewPatientEmergencyRelation("");
-      setNewPatientEmergencyPhone("");
-      setNewPatientInsuranceProvider("");
-      setNewPatientInsuranceNumber("");
-      setNewPatientBloodType("");
-      setNewPatientPhone("");
-      setNewPatientEmail("");
-      setNewPatientAddress("");
-      setNewPatientHistory("");
-      setNewPatientBp("");
-      setNewPatientHr("");
-      setNewPatientInitialNote("");
-      setNewPatientInitialDx("");
-      setNewPatientInitialFollowUp("");
-      setNewPatientHeight("");
-      setNewPatientWeight("");
-      triggerToast("Created patient in local cache (Offline Fallback)");
+      // Fail honestly instead of faking success with a local-only object --
+      // that pattern (SIMA's original "offline fallback") is exactly what
+      // made patients silently vanish: the toast said "created" and the
+      // chart opened normally, but nothing was ever in the database, so it
+      // was gone on the next refresh or from any other session. The form
+      // stays open with everything still filled in so it can be retried.
+      console.error("Could not save patient to database:", err);
+      triggerToast(`Could not save this patient: ${err.message || "Unknown error"}. Nothing was saved -- please try again.`);
     } finally {
       setSaveLoading(false);
     }
