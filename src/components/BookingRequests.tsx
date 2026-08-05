@@ -58,6 +58,10 @@ export default function BookingRequests({
   const [chosenPatient, setChosenPatient] = useState<PatientLite | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Set once a request is confirmed, so the dialog can offer the obvious
+  // next step -- telling the patient -- instead of closing and hiding the
+  // notify button away on the Handled tab.
+  const [justConfirmed, setJustConfirmed] = useState<RequestRow | null>(null);
 
   const [clinic, setClinic] = useState<{ clinic_name: string; phone: string | null; address: string | null; whatsapp_template: string | null; default_country_code: string; default_slot_minutes: number; timezone: string | null } | null>(null);
   const [doctors, setDoctors] = useState<{ id: string; full_name: string }[]>([]);
@@ -172,7 +176,10 @@ export default function BookingRequests({
         .eq("id", confirming.id);
       if (updErr) throw updErr;
 
+      // Keep the dialog open on a "now tell them" step rather than closing.
+      setJustConfirmed({ ...confirming, status: "confirmed" });
       setConfirming(null);
+      setTab("handled");
       await fetchRows();
     } catch (err: any) {
       // The book has a database-level no-overlap constraint; surface that
@@ -211,12 +218,12 @@ export default function BookingRequests({
     }
   };
 
-  // ── Manual WhatsApp. Opens the app with the message ready; the staff
-  // member presses send. Nothing is sent from here.
-  const notifyWhatsApp = async (r: RequestRow) => {
+  // Built separately from the click handler so the confirm dialog can show
+  // the staff member exactly what the patient will read before they send it.
+  const buildMessage = (r: RequestRow) => {
     const doctorName = doctors.find(d => d.id === r.doctor_id)?.full_name || "your doctor";
     const when = new Date(r.requested_at);
-    const message = fillTemplate(clinic?.whatsapp_template || DEFAULT_WHATSAPP_TEMPLATE, {
+    return fillTemplate(clinic?.whatsapp_template || DEFAULT_WHATSAPP_TEMPLATE, {
       name: r.full_name,
       date: when.toLocaleDateString("en-GB", {
         weekday: "long", day: "2-digit", month: "long", year: "numeric",
@@ -231,6 +238,12 @@ export default function BookingRequests({
       phone: clinic?.phone || "",
       address: clinic?.address || "",
     });
+  };
+
+  // ── Manual WhatsApp. Opens the app with the message ready; the staff
+  // member presses send. Nothing is sent from here.
+  const notifyWhatsApp = async (r: RequestRow) => {
+    const message = buildMessage(r);
     const link = buildWhatsAppLink(r.phone, message, clinic?.default_country_code);
     if (!link) {
       setError(`${r.full_name}'s phone number (${r.phone}) isn't a valid number, so WhatsApp can't open.`);
@@ -361,6 +374,63 @@ export default function BookingRequests({
           {(tab === "pending" ? pending : handled).map(r => <Row key={r.id} r={r} />)}
         </div>
       )}
+
+      {/* BOOKED — offer the obvious next step: tell the patient. */}
+      {justConfirmed && (() => {
+        const message = buildMessage(justConfirmed);
+        const link = buildWhatsAppLink(justConfirmed.phone, message, clinic?.default_country_code);
+        return (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[9999]">
+            <div className="bg-white rounded-xl shadow-2xl border w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+              <div className="px-4 py-3 border-b bg-emerald-50 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <Check size={16} className="text-emerald-600" />
+                  <div>
+                    <span className="font-black text-xs text-emerald-800 uppercase tracking-wide block">Appointment booked</span>
+                    <span className="text-[10px] text-emerald-700 font-semibold">
+                      {justConfirmed.full_name} · {formatSlot(justConfirmed.requested_at, clinic?.timezone)}
+                    </span>
+                  </div>
+                </div>
+                <button onClick={() => setJustConfirmed(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
+                  <X size={17} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2.5">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Message the patient will read
+                </div>
+                <pre className="text-[11px] text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 whitespace-pre-wrap font-sans leading-relaxed">
+                  {message}
+                </pre>
+                {link ? (
+                  <p className="text-[10px] text-slate-400">
+                    WhatsApp opens with this already typed to {justConfirmed.phone}. You still press send.
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-red-600 font-semibold bg-red-50 border border-red-200 rounded p-2">
+                    {justConfirmed.phone} isn't a valid number, so WhatsApp can't open. Call the patient instead.
+                  </p>
+                )}
+              </div>
+
+              <div className="border-t px-4 py-3 flex items-center justify-end gap-2 shrink-0 bg-slate-50">
+                <button onClick={() => setJustConfirmed(null)} className="text-[11px] font-bold text-slate-500 px-3 py-2 cursor-pointer">
+                  Not now
+                </button>
+                <button
+                  disabled={!link}
+                  onClick={async () => { await notifyWhatsApp(justConfirmed); setJustConfirmed(null); }}
+                  className="text-[11px] font-bold text-white bg-[#25D366] hover:brightness-95 disabled:opacity-40 px-3.5 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                >
+                  <MessageCircle size={12} /> Notify by WhatsApp
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* CONFIRM MODAL — match to a chart before creating the appointment */}
       {confirming && (

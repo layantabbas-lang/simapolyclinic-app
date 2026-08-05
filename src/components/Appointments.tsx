@@ -85,13 +85,20 @@ export default function Appointments({ currentUser }: { currentUser?: UserSessio
       // that this stays cheap.
       const { data, error } = await supabase
         .from("appointments")
-        .select("*, patients(id, first_name, last_name, mrn, phone), staff(id, full_name), rooms(id, name)")
+        // staff!doctor_id, not a bare staff(...): appointments has two FKs to
+        // staff (doctor_id and created_by), so an unqualified embed is
+        // ambiguous and PostgREST rejects the whole query with PGRST201 --
+        // which showed up as an empty appointment book.
+        .select("*, patients(id, first_name, last_name, mrn, phone), staff!doctor_id(id, full_name), rooms(id, name)")
         .order("starts_at");
       if (error) throw error;
       setAppointments(data || []);
-    } catch (err) {
-      console.error("Could not load appointments:", err);
-      setErrorMsg("Could not load the appointment book.");
+    } catch (err: any) {
+      // Log and surface the actual message. "Could not load the appointment
+      // book" plus an [object Object] in the console says nothing about
+      // whether it's permissions, a bad query, or the network.
+      console.error("Could not load appointments:", err?.message || err, err);
+      setErrorMsg(`Could not load the appointment book: ${err?.message || "unknown error"}`);
     } finally {
       setIsLoading(false);
     }
