@@ -435,10 +435,15 @@ interface MedicalRecordRow {
 export default function PatientsDirectory({
   externalSearchQuery = "",
   onClearExternalSearch,
+  openPatientId,
+  onOpenedPatient,
   currentUser
 }: {
   externalSearchQuery?: string;
   onClearExternalSearch?: () => void;
+  // Set by the Dashboard to open straight into one patient's chart.
+  openPatientId?: string | null;
+  onOpenedPatient?: () => void;
   currentUser?: { id?: string; staffId?: string; username: string; name: string; role: string } | null;
 } = {}) {
   const { openNoteWindow, activeWindows } = useVisitNotes();
@@ -465,6 +470,19 @@ export default function PatientsDirectory({
       }
     }
   }, [externalSearchQuery]);
+
+  // Open straight into a chart when the Dashboard hands us a patient.
+  // Waits for the list to load, since the chart is driven by the full
+  // Patient object rather than the id alone.
+  useEffect(() => {
+    if (!openPatientId || patients.length === 0) return;
+    const match = patients.find(p => p.id === openPatientId);
+    if (match) {
+      setSelectedPatient(match);
+      onOpenedPatient?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPatientId, patients]);
 
   // Loading & error flags
   const [isLoading, setIsLoading] = useState(false);

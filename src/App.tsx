@@ -27,6 +27,9 @@ export default function App() {
   const [isTestManagerOpen, setIsTestManagerOpen] = useState(false);
   const [isLocationsManagerOpen, setIsLocationsManagerOpen] = useState(false);
   const [isStaffManagerOpen, setIsStaffManagerOpen] = useState(false);
+  // Set when the Dashboard asks to open a chart; cleared once
+  // PatientsDirectory has actually selected that patient.
+  const [pendingPatientId, setPendingPatientId] = useState<string | null>(null);
 
   useEffect(() => {
     restoreSession()
@@ -212,8 +215,22 @@ export default function App() {
 
         {/* Page container */}
         <main className="flex-1">
-          {viewMode === "dashboard" && <Dashboard currentUser={currentUser} />}
-          {viewMode === "patients" && <PatientsDirectory currentUser={currentUser} />}
+          {viewMode === "dashboard" && (
+            <Dashboard
+              currentUser={currentUser}
+              onOpenPatient={(patientId) => {
+                setPendingPatientId(patientId);
+                setViewMode("patients");
+              }}
+            />
+          )}
+          {viewMode === "patients" && (
+            <PatientsDirectory
+              currentUser={currentUser}
+              openPatientId={pendingPatientId}
+              onOpenedPatient={() => setPendingPatientId(null)}
+            />
+          )}
           {viewMode === "appointments" && <Appointments currentUser={currentUser} />}
           {viewMode === "billing" && <Billing currentUser={currentUser} />}
         </main>
